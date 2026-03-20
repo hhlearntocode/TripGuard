@@ -1,0 +1,8 @@
+chromadb
+sentence-transformers
+FlagEmbedding
+langchain-text-splitters
+underthesea
+olefile
+pytest
+pytest-cov
