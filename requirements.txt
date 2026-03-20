@@ -1,8 +1,12 @@
+fastapi
+uvicorn[standard]
 chromadb
 sentence-transformers
-FlagEmbedding
-langchain-text-splitters
-underthesea
-olefile
+openai
+ollama
+tavily-python
+httpx
+python-dotenv
 pytest
-pytest-cov
+pytest-asyncio
+httpx
