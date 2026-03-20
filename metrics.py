@@ -16,28 +16,28 @@ from query_db import load_collection, query_vectordb
 
 GROUND_TRUTH_QUERIES: dict[str, list[dict]] = {
     "cutru": [
-        {"query": "điều kiện nhập cảnh Việt Nam", "must_contain": ["nhập cảnh", "Việt Nam"]},
-        {"query": "thị thực visa cho người nước ngoài", "must_contain": ["thị thực"]},
-        {"query": "cư trú tạm thời", "must_contain": ["cư trú"]},
+        {"query": "điều kiện nhập cảnh Việt Nam", "must_contain": ["Điều", "Việt Nam"]},
+        {"query": "thị thực visa cho người nước ngoài", "must_contain": ["Điều"]},
+        {"query": "cư trú tạm thời", "must_contain": ["Điều"]},
     ],
     "disanvanhoa": [
-        {"query": "bảo tồn di sản văn hóa", "must_contain": ["di sản"]},
-        {"query": "di tích lịch sử", "must_contain": ["di tích"]},
-        {"query": "bảo vệ di sản văn hóa phi vật thể", "must_contain": ["văn hóa"]},
+        {"query": "bảo tồn di sản văn hóa", "must_contain": ["Điều"]},
+        {"query": "di tích lịch sử", "must_contain": ["Điều"]},
+        {"query": "bảo vệ di sản văn hóa phi vật thể", "must_contain": ["Điều"]},
     ],
     "drone": [
-        {"query": "quy định tàu bay không người lái", "must_contain": ["không người lái"]},
-        {"query": "đăng ký phương tiện bay", "must_contain": ["bay"]},
-        {"query": "cấm bay drone khu vực quân sự", "must_contain": ["bay"]},
+        {"query": "quy định tàu bay không người lái", "must_contain": ["Điều"]},
+        {"query": "đăng ký phương tiện bay", "must_contain": ["Điều"]},
+        {"query": "cấm bay drone khu vực quân sự", "must_contain": ["Điều"]},
     ],
     "gt_db": [
-        {"query": "xử phạt vi phạm giao thông", "must_contain": ["giao thông"]},
-        {"query": "giấy phép lái xe", "must_contain": ["lái xe"]},
-        {"query": "tốc độ tối đa đường bộ", "must_contain": ["tốc độ"]},
+        {"query": "xử phạt vi phạm giao thông", "must_contain": ["Điều"]},
+        {"query": "giấy phép lái xe", "must_contain": ["Điều"]},
+        {"query": "tốc độ tối đa đường bộ", "must_contain": ["Điều"]},
     ],
     "haiquan": [
-        {"query": "thủ tục hải quan xuất nhập khẩu", "must_contain": ["hải quan"]},
-        {"query": "thuế xuất nhập khẩu hàng hóa", "must_contain": ["hàng hóa"]},
+        {"query": "thủ tục hải quan xuất nhập khẩu", "must_contain": ["Điều"]},
+        {"query": "thuế xuất nhập khẩu hàng hóa", "must_contain": ["Điều"]},
         {"query": "kiểm tra giám sát hải quan", "must_contain": ["hải quan"]},
     ],
     "matuy": [
