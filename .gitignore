@@ -1,5 +1,4 @@
 .env
-chroma_db/
 chunk_logs/
 __pycache__/
 *.pyc
