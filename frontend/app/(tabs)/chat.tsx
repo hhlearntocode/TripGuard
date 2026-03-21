@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
+import Markdown from "react-native-markdown-display";
 import { useLocalSearchParams } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
 import {
@@ -64,28 +65,17 @@ interface PendingAttachment {
 
 function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
   const urlSources = (sources ?? []).filter((s) => s.startsWith("http"));
-  const lines = text.split("\n");
   return (
     <View style={{ gap: 0 }}>
-      {lines.map((line, i) => {
-        const isSourceLine = /^Source:/i.test(line.trim());
-        if (isSourceLine) {
-          const ref = line.replace(/^Source:\s*/i, "").trim();
-          return (
-            <View key={i} style={answerStyles.sourceRow}>
-              <Text style={answerStyles.sourceRef}>
-                <Text style={answerStyles.sourceLabel}>Source: </Text>
-                {ref}
-              </Text>
-            </View>
-          );
-        }
-        return (
-          <Text key={i} style={answerStyles.line}>
-            {line}
-          </Text>
-        );
-      })}
+      <Markdown
+        style={markdownStyles}
+        onLinkPress={(url) => {
+          void Linking.openURL(url);
+          return false;
+        }}
+      >
+        {text}
+      </Markdown>
 
       {urlSources.length > 0 && (
         <View style={answerStyles.refsBlock}>
@@ -115,26 +105,6 @@ function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
 }
 
 const answerStyles = StyleSheet.create({
-  line: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    color: mobileTheme.colors.textPrimary,
-    lineHeight: 21,
-  },
-  sourceRow: {
-    marginTop: 6,
-    gap: 6,
-  },
-  sourceRef: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 12,
-    color: mobileTheme.colors.textSecondary,
-    lineHeight: 18,
-  },
-  sourceLabel: {
-    fontWeight: "700",
-    color: mobileTheme.colors.textPrimary,
-  },
   refsBlock: {
     marginTop: 12,
     paddingTop: 10,
@@ -167,6 +137,86 @@ const answerStyles = StyleSheet.create({
     fontFamily: mobileTheme.fonts.body,
     fontSize: 11,
     color: mobileTheme.colors.textSecondary,
+  },
+});
+
+const markdownStyles = StyleSheet.create({
+  body: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 8,
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  heading1: {
+    marginTop: 8,
+    marginBottom: 6,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+  },
+  heading2: {
+    marginTop: 8,
+    marginBottom: 6,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+  },
+  heading3: {
+    marginTop: 8,
+    marginBottom: 4,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+  },
+  bullet_list: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  ordered_list: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  list_item: {
+    marginBottom: 4,
+  },
+  strong: {
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+  },
+  em: {
+    fontStyle: "italic",
+  },
+  code_inline: {
+    backgroundColor: mobileTheme.colors.surface,
+    color: mobileTheme.colors.textPrimary,
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    fontFamily: mobileTheme.fonts.body,
+  },
+  link: {
+    color: mobileTheme.colors.primary,
+    textDecorationLine: "underline",
+  },
+  blockquote: {
+    borderLeftWidth: 3,
+    borderLeftColor: mobileTheme.colors.line,
+    paddingLeft: 10,
+    opacity: 0.95,
   },
 });
 
