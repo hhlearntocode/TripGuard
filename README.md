@@ -85,6 +85,205 @@ TripGuard is a mobile AI assistant that gives foreign tourists in Vietnam instan
 
 ---
 
+## Getting Started
+
+### Prerequisites
+
+- **Python 3.10+**
+- **Node.js 18+** (with npm)
+- API keys (see [Environment Variables](#environment-variables))
+
+### Quick Setup (one command)
+
+```bash
+python scripts/init.py setup
+```
+
+This creates a Python virtual environment, installs all backend dependencies from `requirements.txt`, and runs `npm install` inside `frontend/`.
+
+### Local Development
+
+```bash
+python scripts/init.py dev
+```
+
+Starts both servers in parallel:
+
+| Service  | URL                    |
+|----------|------------------------|
+| Backend  | http://localhost:8000  |
+| Frontend | http://localhost:8081  |
+
+Press **Ctrl+C** to stop both.
+
+If you prefer to run them separately:
+
+```bash
+# Terminal 1 — Backend (from project root)
+source venv/bin/activate
+uvicorn backend.main:app --reload
+
+# Terminal 2 — Frontend
+cd frontend
+npx expo start --web
+```
+
+### Environment Variables
+
+Copy the example and fill in your keys:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `LLM_PROVIDER` | Yes | `openrouter` or `ollama` |
+| `OPENROUTER_API_KEY` | If using OpenRouter | LLM text generation |
+| `OPENROUTER_MODEL` | If using OpenRouter | e.g. `qwen/qwen-2.5-72b-instruct` |
+| `OLLAMA_MODEL` | If using Ollama | e.g. `qwen2.5:72b` |
+| `EMBEDDING_MODEL` | Yes | `text-embedding-3-small` (Vercel) or `BAAI/bge-m3` (local) |
+| `OPENAI_API_KEY` | Yes | Embeddings + vision (sign detection) |
+| `TAVILY_API_KEY` | Yes | Web search fallback |
+| `TINYFISH_API_KEY` | Yes | Web scraping after search |
+| `ELEVENLABS_API_KEY` | Optional | Voice TTS responses |
+| `ELEVENLABS_TTS_VOICE_ID` | Optional | ElevenLabs voice ID |
+| `EXPO_PUBLIC_API_URL` | Yes | Backend URL for frontend (`http://localhost:8000` for dev) |
+
+---
+
+## Deploying to Vercel
+
+### Architecture on Vercel
+
+```
+Vercel Project
+├── /api/*  →  Python Serverless Function (FastAPI)
+├── /health →  Python Serverless Function
+└── /*      →  Static Frontend (Expo Web export)
+```
+
+### Step 1 — Install Vercel CLI
+
+```bash
+npm i -g vercel
+```
+
+### Step 2 — Link your project
+
+From the project root:
+
+```bash
+vercel link
+```
+
+Follow the prompts to connect to your Vercel account and project.
+
+### Step 3 — Set environment variables
+
+Add all required env vars to Vercel (never commit `.env`):
+
+```bash
+# Required for backend
+vercel env add OPENROUTER_API_KEY
+vercel env add OPENROUTER_MODEL
+vercel env add LLM_PROVIDER
+vercel env add OPENAI_API_KEY
+vercel env add EMBEDDING_MODEL
+vercel env add TAVILY_API_KEY
+vercel env add TINYFISH_API_KEY
+
+# Optional
+vercel env add ELEVENLABS_API_KEY
+vercel env add ELEVENLABS_TTS_VOICE_ID
+```
+
+Or set them in the Vercel dashboard under **Settings → Environment Variables**.
+
+**Important:** Set `EXPO_PUBLIC_API_URL` to your Vercel deployment URL (e.g. `https://tripguard.vercel.app`).
+
+### Step 4 — Deploy
+
+```bash
+# Preview deployment
+vercel
+
+# Production deployment
+vercel --prod
+```
+
+### Step 5 — Verify
+
+```bash
+# Health check
+curl https://your-project.vercel.app/health
+
+# Should return: {"status":"ok"}
+```
+
+Visit `https://your-project.vercel.app` to see the frontend.
+
+### How it works
+
+| Component | Vercel Builder | What happens |
+|-----------|----------------|--------------|
+| `api/index.py` | `@vercel/python` | Wraps the FastAPI app as a serverless function |
+| `frontend/` | `@vercel/static-build` | Runs `npm run vercel-build` → `expo export --platform web` → serves `dist/` |
+
+Route matching in `vercel.json`:
+- `/api/*` and `/health` → Python serverless function
+- Everything else → static frontend files
+
+### Build locally (to test before deploying)
+
+```bash
+python scripts/init.py build
+```
+
+This runs `expo export --platform web` and outputs static files to `frontend/dist/`.
+
+### Known Limitations
+
+- **Serverless function size**: Vercel limits serverless bundles to 250MB compressed. Routes using `sentence-transformers` + ChromaDB (RAG retrieval) may exceed this. For production, migrate to OpenAI embeddings (`text-embedding-3-small`) + Upstash Vector.
+- **Cold starts**: First request after inactivity may take 3-5 seconds.
+- **Timeout**: Vercel Hobby plan has a 10s function timeout (Pro: 60s). Complex agent queries with multiple tool calls may need the Pro plan.
+
+---
+
+## Project Structure
+
+```
+tripguard/
+├── api/                    # Vercel serverless entry point
+│   └── index.py            # Re-exports FastAPI app
+├── backend/
+│   ├── main.py             # FastAPI app, CORS, lifespan
+│   ├── routers/
+│   │   ├── chat.py         # POST /api/chat, /api/vision
+│   │   └── voice.py        # Voice/TTS endpoints
+│   ├── services/
+│   │   ├── agent.py        # ReAct agentic loop
+│   │   ├── llm_adapter.py  # OpenRouter / Ollama adapter
+│   │   ├── rag_service.py  # ChromaDB retrieval
+│   │   ├── web_search_service.py
+│   │   ├── tinyfish_service.py
+│   │   └── vision_service.py
+│   └── data/
+│       ├── constants.py    # Fine amounts, visa rules (hardcoded)
+│       └── emergency.py    # Emergency scripts (offline-safe)
+├── frontend/
+│   ├── app/                # Expo Router screens
+│   ├── components/         # UI components
+│   ├── constants/          # Client-side legal + emergency data
+│   └── hooks/              # useUserProfile, useChatHistory
+├── scripts/
+│   └── init.py             # Setup, dev, build commands
+├── vercel.json             # Vercel deployment config
+└── requirements.txt        # Python dependencies
+```
+
+---
+
 ## Built by Severance
 
 | | |
