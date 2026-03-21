@@ -18,7 +18,6 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
-import Markdown from "react-native-markdown-display";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
 import {
   appendMessageToThread,
@@ -65,68 +64,109 @@ interface PendingAttachment {
 
 function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
   const urlSources = (sources ?? []).filter((s) => s.startsWith("http"));
-  const references =
-    urlSources.length > 0
-      ? `\n\n### References\n${urlSources.map((url) => `- [${url.replace(/^https?:\/\//, "").split("/")[0]}](${url})`).join("\n")}`
-      : "";
-  const markdownContent = `${text.trim()}${references}`;
-
+  const lines = text.split("\n");
   return (
-    <Markdown
-      style={markdownStyles}
-      onLinkPress={(url) => {
-        void Linking.openURL(url);
-        return false;
-      }}
-    >
-      {markdownContent}
-    </Markdown>
+    <View style={{ gap: 0 }}>
+      {lines.map((line, i) => {
+        const isSourceLine = /^Source:/i.test(line.trim());
+        if (isSourceLine) {
+          const ref = line.replace(/^Source:\s*/i, "").trim();
+          return (
+            <View key={i} style={answerStyles.sourceRow}>
+              <Text style={answerStyles.sourceRef}>
+                <Text style={answerStyles.sourceLabel}>Source: </Text>
+                {ref}
+              </Text>
+            </View>
+          );
+        }
+        return (
+          <Text key={i} style={answerStyles.line}>
+            {line}
+          </Text>
+        );
+      })}
+
+      {urlSources.length > 0 && (
+        <View style={answerStyles.refsBlock}>
+          <Text style={answerStyles.refsLabel}>References</Text>
+          {urlSources.map((url, i) => {
+            const domain = url.replace(/^https?:\/\//, "").split("/")[0];
+            const path = url.replace(/^https?:\/\/[^/]+/, "").slice(0, 48) || "/";
+            return (
+              <TouchableOpacity
+                key={i}
+                style={answerStyles.refRow}
+                onPress={() => Linking.openURL(url)}
+              >
+                <Ionicons name="link-outline" size={12} color={mobileTheme.colors.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={answerStyles.refDomain}>{domain}</Text>
+                  <Text style={answerStyles.refPath} numberOfLines={1}>{path}</Text>
+                </View>
+                <Ionicons name="open-outline" size={12} color={mobileTheme.colors.textSecondary} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
   );
 }
 
-const markdownStyles = StyleSheet.create({
-  body: {
+const answerStyles = StyleSheet.create({
+  line: {
     fontFamily: mobileTheme.fonts.body,
     fontSize: 14,
     color: mobileTheme.colors.textPrimary,
     lineHeight: 21,
   },
-  paragraph: {
+  sourceRow: {
+    marginTop: 6,
+    gap: 6,
+  },
+  sourceRef: {
     fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    color: mobileTheme.colors.textPrimary,
-    lineHeight: 21,
-    marginTop: 0,
-    marginBottom: 8,
+    fontSize: 12,
+    color: mobileTheme.colors.textSecondary,
+    lineHeight: 18,
   },
-  heading3: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    fontWeight: "700",
-    color: mobileTheme.colors.textPrimary,
-    marginTop: 8,
-    marginBottom: 6,
-  },
-  bullet_list: {
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  ordered_list: {
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  list_item: {
-    marginBottom: 4,
-  },
-  strong: {
+  sourceLabel: {
     fontWeight: "700",
     color: mobileTheme.colors.textPrimary,
   },
-  link: {
+  refsBlock: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(99,102,241,0.15)",
+    gap: 6,
+  },
+  refsLabel: {
     fontFamily: mobileTheme.fonts.body,
-    fontSize: 13,
+    fontSize: 11,
+    fontWeight: "700",
+    color: mobileTheme.colors.textSecondary,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  refRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    paddingVertical: 3,
+  },
+  refDomain: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    fontWeight: "600",
     color: mobileTheme.colors.primary,
-    textDecorationLine: "underline",
+  },
+  refPath: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    color: mobileTheme.colors.textSecondary,
   },
 });
 
@@ -185,8 +225,6 @@ export default function ChatScreen() {
       content: msg.content,
       state: msg.state as LegalityUiState | undefined,
       created_at: msg.created_at,
-      attachments: msg.attachments,
-      sources: msg.sources,
     }));
     setActiveChatId(chatId);
     setMessages(nextMessages);
@@ -287,16 +325,22 @@ export default function ChatScreen() {
         attachments.map(async (a, i) => {
           if (!a.base64) return `- Image ${i + 1}: attached (analysis unavailable).`;
           try {
-            const visionResp = await fetch(`${API_URL}/api/vision`, {
+            const visionResp = await fetch(`${API_URL}/api/vision/analyze`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ image_b64: a.base64 }),
             });
-            const sign = await visionResp.json();
-            if (sign?.code) {
-              return `[Traffic sign in photo: ${sign.code} — "${sign.name}" — category:${sign.category ?? "unknown"}]`;
+            const result = await visionResp.json();
+
+            if (result?.type === "sign" && result.code) {
+              return `[Traffic sign in photo: ${result.code} — "${result.name}" — category:${result.category ?? "unknown"}]`;
             }
-            return `- Image ${i + 1}: not recognized as a Vietnamese traffic sign.`;
+
+            if (result?.type === "object" && result.description) {
+              return `[Image content: ${result.description}${result.law_relevance ? ` — domain:${result.law_relevance}` : ""}]`;
+            }
+
+            return `- Image ${i + 1}: could not identify content.`;
           } catch {
             return `- Image ${i + 1}: could not analyze image.`;
           }
@@ -323,11 +367,7 @@ export default function ChatScreen() {
     };
     const convo = [...messages, userMessage];
     setMessages(convo);
-    await appendMessageToThread(threadId, {
-      role: "user",
-      content: query,
-      attachments: sentAttachments.map((a) => ({ uri: a.uri })),
-    });
+    await appendMessageToThread(threadId, { role: "user", content: query });
 
     const userCount = convo.filter((m) => m.role === "user").length;
     if (userCount === 1) {
@@ -390,12 +430,7 @@ export default function ChatScreen() {
           sources,
         };
         setMessages((prev) => [...prev, nextMessage]);
-        await appendMessageToThread(threadId, {
-          role: "assistant",
-          content: answer,
-          state: nextState,
-          sources,
-        });
+        await appendMessageToThread(threadId, { role: "assistant", content: answer, state: nextState });
         setUiState(nextState);
       } else {
         // Fallback: non-streaming (native builds that don't support body reader)
@@ -410,12 +445,7 @@ export default function ChatScreen() {
           sources: data.sources || [],
         };
         setMessages((prev) => [...prev, nextMessage]);
-        await appendMessageToThread(threadId, {
-          role: "assistant",
-          content: data.answer || "",
-          state: nextState,
-          sources: data.sources || [],
-        });
+        await appendMessageToThread(threadId, { role: "assistant", content: data.answer || "", state: nextState });
         setUiState(nextState);
       }
     } catch (e) {

@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from backend.services.agent import run_agent
-from backend.services.vision_service import identify_sign
+from backend.services.vision_service import analyze_image, identify_sign
 
 router = APIRouter()
 
@@ -72,3 +72,8 @@ async def vision(req: VisionRequest):
     if result is None:
         return {"code": None, "name": None, "meaning": None}
     return result
+
+
+@router.post("/api/vision/analyze")
+async def vision_analyze(req: VisionRequest):
+    return analyze_image(req.image_b64)
