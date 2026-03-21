@@ -8,3 +8,5 @@ rag/
 venv*/
 node_modules/
 frontend/.expo/
+.vercel
+.env*.local
