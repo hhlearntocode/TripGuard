@@ -1,153 +1,321 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, Alert, Image,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  NativeSyntheticEvent,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInputKeyPressEventData,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import ChatBubble from "@/components/ChatBubble";
-import QuickActions from "@/components/QuickActions";
+import { useLocalSearchParams } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
-import { COLORS } from "@/constants/theme";
+import {
+  appendMessageToThread,
+  ChatThreadMessage,
+  createChatThread,
+  dismissAssessmentForThread,
+  loadChatThread,
+  loadDismissedAssessmentIds,
+  loadChatThreadSummaries,
+  updateChatThreadTitle,
+} from "@/hooks/useChatHistory";
+import ScreenSurface from "@/components/ui/ScreenSurface";
+import AppDashboardMenu from "@/components/ui/AppDashboardMenu";
+import SectionHeader from "@/components/ui/SectionHeader";
+import StatusPill from "@/components/ui/StatusPill";
+import { deriveLegalityState, getLegalityTone, LegalityUiState } from "@/features/flows";
+import { mobileTheme } from "@/theme/mobileTheme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
-
-interface ToolCall {
-  tool: string;
-  args: Record<string, any>;
-}
-
-interface SignInfo {
-  code: string;
-  name: string;
-  meaning: string;
-  category?: string;
-}
-
-interface PendingImage {
-  uri: string;
-  base64: string;
-}
+const WEB_ASSESSMENT_BOTTOM_FADE_MASK = {
+  WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 90%, transparent 100%)",
+  maskImage: "linear-gradient(to bottom, black 0%, black 90%, transparent 100%)",
+} as const;
+const WEB_EDGE_FADE_MASK = {
+  WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 8%, black 100%)",
+  maskImage: "linear-gradient(to bottom, transparent 0%, black 8%, black 100%)",
+} as const;
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
-  sources?: string[];
-  toolsUsed?: ToolCall[];
-  steps?: string[];
-  signInfo?: SignInfo;
-  imageUri?: string;
+  state?: LegalityUiState;
+  created_at: string;
+  attachments?: Array<{ uri: string }>;
+}
+
+interface PendingAttachment {
+  id: string;
+  uri: string;
+  base64?: string;
 }
 
 export default function ChatScreen() {
+  const params = useLocalSearchParams<{ query?: string; chat_id?: string }>();
+  const { width } = useWindowDimensions();
+  const isWideLayout = Platform.OS === "web" && width >= 1080;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const flatListRef = useRef<FlatList>(null);
-  const insets = useSafeAreaInsets();
+  const [uiState, setUiState] = useState<LegalityUiState>("uncertain");
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [threadReady, setThreadReady] = useState(false);
+  const [dismissedAssessmentIds, setDismissedAssessmentIds] = useState<string[]>([]);
+  const [deletingAssessmentId, setDeletingAssessmentId] = useState<string | null>(null);
+  const [isAssessmentCollapsed, setIsAssessmentCollapsed] = useState(false);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [composerHeight, setComposerHeight] = useState(188);
+  const conversationScrollRef = useRef<ScrollView | null>(null);
+
+  const quickScenarios = useMemo(
+    () => [
+      "Can I bring this into Vietnam?",
+      "Is this area restricted for foreigners?",
+      "What happens if I do this?",
+      "Can I ride here with my current license?",
+    ],
+    []
+  );
 
   useEffect(() => {
     loadUserProfile().then(setProfile);
   }, []);
 
-  const sendMessage = async (text: string) => {
-    const hasText = !!text.trim();
-    const hasImage = !!pendingImage;
-    if (!hasText && !hasImage) return;
-    if (isLoading || !profile) return;
+  const formatDateTime = (iso: string) => {
+    const d = new Date(iso);
+    const date = d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" });
+    const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    return `${date} ${time}`;
+  };
 
-    // Capture and clear pending image immediately so UI resets
-    const capturedImage = pendingImage;
-    setPendingImage(null);
+  const scrollConversationToBottom = () => {
+    requestAnimationFrame(() => {
+      conversationScrollRef.current?.scrollToEnd({ animated: true });
+    });
+  };
+
+  const hydrateThread = async (chatId: string) => {
+    const thread = await loadChatThread(chatId);
+    if (!thread) return false;
+    const nextMessages: Message[] = thread.messages.map((msg: ChatThreadMessage) => ({
+      id: msg.id,
+      role: msg.role,
+      content: msg.content,
+      state: msg.state as LegalityUiState | undefined,
+      created_at: msg.created_at,
+    }));
+    setActiveChatId(chatId);
+    setMessages(nextMessages);
+    const dismissed = await loadDismissedAssessmentIds(chatId);
+    setDismissedAssessmentIds(dismissed);
+    const lastAssistant = [...nextMessages].reverse().find((m) => m.role === "assistant");
+    setUiState(lastAssistant?.state || (lastAssistant ? deriveLegalityState(lastAssistant.content) : "uncertain"));
+    return true;
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const bootstrap = async () => {
+      setThreadReady(false);
+      const paramChatId = params.chat_id && !Array.isArray(params.chat_id) ? params.chat_id : null;
+      if (paramChatId) {
+        const ok = await hydrateThread(paramChatId);
+        if (ok && mounted) {
+          setThreadReady(true);
+          return;
+        }
+      }
+
+      const summaries = await loadChatThreadSummaries();
+      if (summaries.length > 0) {
+        const ok = await hydrateThread(summaries[0].chat_id);
+        if (ok && mounted) {
+          setThreadReady(true);
+          return;
+        }
+      }
+
+      const created = await createChatThread();
+      if (!mounted) return;
+      setActiveChatId(created.chat_id);
+      setMessages([]);
+      setUiState("uncertain");
+      setThreadReady(true);
+    };
+    bootstrap();
+    return () => {
+      mounted = false;
+    };
+  }, [params.chat_id]);
+
+  useEffect(() => {
+    if (!params.query || Array.isArray(params.query)) return;
+    setInput(params.query);
+  }, [params.query]);
+
+  useEffect(() => {
+    if (!threadReady) return;
+    scrollConversationToBottom();
+  }, [messages.length, activeChatId, threadReady]);
+
+  const assessmentItems = useMemo(() => {
+    const logs: Array<{ id: string; query: string; content: string; state: LegalityUiState; created_at: string }> = [];
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const current = messages[i];
+      if (current.role !== "assistant") continue;
+      let query = "Scenario";
+      for (let j = i - 1; j >= 0; j -= 1) {
+        if (messages[j].role === "user") {
+          query = messages[j].content;
+          break;
+        }
+      }
+      logs.push({
+        id: current.id,
+        query,
+        content: current.content,
+        state: current.state || deriveLegalityState(current.content),
+        created_at: current.created_at,
+      });
+    }
+    return logs.filter((item) => !dismissedAssessmentIds.includes(item.id));
+  }, [messages, dismissedAssessmentIds]);
+
+  const sendMessage = async (text: string) => {
+    if ((!text.trim() && attachments.length === 0) || isLoading || !profile || !threadReady) return;
+
+    let threadId = activeChatId;
+    if (!threadId) {
+      const created = await createChatThread();
+      threadId = created.chat_id;
+      setActiveChatId(threadId);
+    }
+
+    const typedQuery = text.trim();
+    setUiState("checking");
     setInput("");
     setIsLoading(true);
 
-    let signInfo: SignInfo | undefined;
-    let imageUri: string | undefined;
-    let apiMessage = text.trim();
-
-    // Step 1: identify sign via vision API if image was attached
-    if (capturedImage) {
-      imageUri = capturedImage.uri;
-      try {
-        const visionResp = await fetch(`${API_URL}/api/vision`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_b64: capturedImage.base64 }),
-        });
-        const sign = await visionResp.json();
-
-        if (sign.code) {
-          signInfo = {
-            code: sign.code,
-            name: sign.name,
-            meaning: sign.meaning,
-            category: sign.category,
-          };
-          const signContext = `[Traffic sign in photo: ${sign.code} — "${sign.name}" — ${sign.meaning}]`;
-          apiMessage = hasText
-            ? `${signContext}\n\nUser question: ${text.trim()}`
-            : `${signContext}\n\nExplain what this traffic sign means, where it is typically placed, what the legal violation is, and the exact fine. Search the web for details about this specific sign (${sign.code}) under QCVN 41:2024.`;
-        } else {
-          const signContext = "[User uploaded a Vietnamese traffic sign photo — auto-identification was unsuccessful]";
-          apiMessage = hasText
-            ? `${signContext}\n\nUser question: ${text.trim()}`
-            : `${signContext}\n\nSearch the web to help identify this Vietnamese traffic sign and explain its legal implications.`;
+    const sentAttachments = [...attachments];
+    let query = typedQuery || "I attached image(s). Please analyze what this means legally in Vietnam.";
+    if (attachments.length > 0) {
+      const lines: string[] = [];
+      for (let i = 0; i < attachments.length; i += 1) {
+        const a = attachments[i];
+        if (!a.base64) {
+          lines.push(`- Image ${i + 1}: attached (analysis unavailable).`);
+          continue;
         }
-      } catch {
-        // Vision failed silently — continue with text only
+        try {
+          const visionResp = await fetch(`${API_URL}/api/vision`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image_b64: a.base64 }),
+          });
+          const sign = await visionResp.json();
+          if (sign?.code) {
+            lines.push(`- Image ${i + 1}: ${sign.code} ${sign.name} — ${sign.meaning}`);
+          } else {
+            lines.push(`- Image ${i + 1}: not recognized as a Vietnamese traffic sign.`);
+          }
+        } catch {
+          lines.push(`- Image ${i + 1}: could not analyze image.`);
+        }
       }
+      query = `${query}\n\nAttached images:\n${lines.join("\n")}`;
+    }
+    setAttachments([]);
+
+    const userMessage: Message = {
+      id: `u-${Date.now().toString()}`,
+      role: "user",
+      content: typedQuery || "[Image attachment]",
+      created_at: new Date().toISOString(),
+      attachments: sentAttachments.map((a) => ({ uri: a.uri })),
+    };
+    const convo = [...messages, userMessage];
+    setMessages(convo);
+    await appendMessageToThread(threadId, { role: "user", content: query });
+
+    const userCount = convo.filter((m) => m.role === "user").length;
+    if (userCount === 1) {
+      await updateChatThreadTitle(threadId, query);
     }
 
-    // Add user bubble immediately (shows photo + sign card + typed question)
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: text.trim(),
-      signInfo,
-      imageUri,
-    };
-    const loadingMsg: Message = { id: "loading", role: "assistant", content: "" };
-    const history = messages.map((m) => ({ role: m.role, content: m.content }));
+    const history = convo.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 
-    setMessages((prev) => [...prev, userMsg, loadingMsg]);
-
-    // Step 2: send to chat API
     try {
       const resp = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: apiMessage || "What does this traffic sign mean?",
+          message: query,
           user_profile: profile,
           conversation_history: history,
         }),
       });
       const data = await resp.json();
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== "loading"),
-        {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: data.answer,
-          sources: data.sources ?? [],
-          toolsUsed: data.debug?.tools_used ?? [],
-          steps: data.debug?.steps ?? [],
-        },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== "loading"),
-        { id: "err", role: "assistant", content: "Network error — check your connection." },
-      ]);
+      const nextState = deriveLegalityState(data.answer || "");
+      const nextMessage: Message = {
+        id: `a-${Date.now().toString()}`,
+        role: "assistant",
+        content: data.answer,
+        state: nextState,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, nextMessage]);
+      await appendMessageToThread(threadId, { role: "assistant", content: data.answer || "", state: nextState });
+      setUiState(nextState);
+    } catch (e) {
+      const fallback = "TripGuard could not verify the scenario right now. Check your connection and retry.";
+      const errorMessage: Message = {
+        id: `err-${Date.now().toString()}`,
+        role: "assistant",
+        content: fallback,
+        state: "warning",
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+      await appendMessageToThread(threadId, { role: "assistant", content: fallback, state: "warning" });
+      setUiState("warning");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDeleteAssessment = async (assessmentId: string) => {
+    if (!activeChatId || deletingAssessmentId) return;
+    setDeletingAssessmentId(assessmentId);
+    await dismissAssessmentForThread(activeChatId, assessmentId);
+    setDismissedAssessmentIds((prev) => [assessmentId, ...prev]);
+    setDeletingAssessmentId(null);
+  };
+
+  const handleComposerKeyPress = (
+    event: NativeSyntheticEvent<TextInputKeyPressEventData>
+  ) => {
+    const nativeEvent = event.nativeEvent as TextInputKeyPressEventData & { shiftKey?: boolean };
+    if (nativeEvent.key !== "Enter") return;
+    if (nativeEvent.shiftKey) return;
+    if (Platform.OS !== "web") return;
+
+    (event as unknown as { preventDefault?: () => void }).preventDefault?.();
+    if ((input.trim() || attachments.length > 0) && !isLoading) {
+      void sendMessage(input);
     }
   };
 
@@ -163,256 +331,681 @@ export default function ChatScreen() {
       quality: 0.7,
     });
     if (result.canceled || !result.assets[0].base64) return;
-    // Just attach — don't send yet
-    setPendingImage({ uri: result.assets[0].uri, base64: result.assets[0].base64 });
+
+    const picked = result.assets[0];
+    setAttachments((prev) => [
+      ...prev,
+      {
+        id: `att-${Date.now().toString()}-${Math.random().toString(36).slice(2, 8)}`,
+        uri: picked.uri,
+        base64: picked.base64 || undefined,
+      },
+    ]);
   };
 
-  const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 88 : 64;
-  const canSend = (!!input.trim() || !!pendingImage) && !isLoading;
-
   return (
-    <LinearGradient colors={[COLORS.bg, "#0F1E35", COLORS.bg2]} style={styles.root}>
-      {/* Header */}
-      <BlurView intensity={50} tint="dark" style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerLeft}>
-          <View style={styles.shieldBadge}>
-            <Text style={styles.shieldEmoji}>🛡️</Text>
-          </View>
-          <View>
-            <Text style={styles.headerTitle}>TripGuard</Text>
-            <Text style={styles.headerSub}>AI Legal Companion</Text>
-          </View>
-        </View>
-        <View style={styles.onlinePill}>
-          <View style={styles.onlineDot} />
-          <Text style={styles.onlineText}>Live</Text>
-        </View>
-      </BlurView>
-
+    <ScreenSurface
+      title="Legality Check"
+      subtitle={getLegalityTone(uiState)}
+      leftNode={<AppDashboardMenu />}
+      rightNode={<StatusPill state={isLoading ? "checking" : uiState} />}
+      scrollable={false}
+    >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={0}
       >
-        {messages.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>⚖️</Text>
-            <Text style={styles.emptyTitle}>Ask me anything legal</Text>
-            <Text style={styles.emptySub}>
-              "Can I do this here?" — I'll check Vietnamese law for you.
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(m) => m.id}
-            renderItem={({ item }) => (
-              <ChatBubble
-                role={item.role}
-                content={item.content}
-                isLoading={item.id === "loading" && isLoading}
-                sources={item.sources}
-                toolsUsed={item.toolsUsed}
-                signInfo={item.signInfo}
-                imageUri={item.imageUri}
-              />
-            )}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            contentContainerStyle={{ paddingTop: 14, paddingBottom: 14 }}
-          />
-        )}
-
-        <QuickActions onSelect={sendMessage} visible={messages.length === 0 && !isLoading} />
-
-        {/* Input bar */}
-        <BlurView intensity={60} tint="dark" style={[styles.inputWrap, { paddingBottom: TAB_BAR_HEIGHT + 8 }]}>
-
-          {/* Pending image attachment preview */}
-          {pendingImage && (
-            <View style={styles.pendingImageRow}>
-              <View style={styles.pendingThumbWrap}>
-                <Image
-                  source={{ uri: pendingImage.uri }}
-                  style={styles.pendingThumb}
-                  resizeMode="cover"
-                />
-                <TouchableOpacity
-                  style={styles.removeThumbBtn}
-                  onPress={() => setPendingImage(null)}
-                  hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
-                >
-                  <Ionicons name="close-circle" size={20} color="#fff" />
-                </TouchableOpacity>
+        <View style={styles.chatRoot}>
+          {isWideLayout ? (
+            <View style={[styles.wideLayout, { paddingBottom: composerHeight + 12 }]}>
+              <View style={[styles.leftPane, isAssessmentCollapsed && styles.leftPaneExpanded]}>
+                <View style={styles.topActionsRow}>
+                  <TouchableOpacity
+                    style={styles.assessmentToggleBtn}
+                    onPress={() => setIsAssessmentCollapsed((prev) => !prev)}
+                  >
+                    <Ionicons
+                      name={isAssessmentCollapsed ? "chevron-back" : "chevron-forward"}
+                      size={14}
+                      color={mobileTheme.colors.textSecondary}
+                    />
+                    <Text style={styles.assessmentToggleText}>
+                      {isAssessmentCollapsed ? "Show assessment" : "Hide assessment"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.sectionCard, styles.conversationCardWide]}>
+                  <ScrollView
+                    ref={conversationScrollRef}
+                    showsVerticalScrollIndicator={false}
+                    style={[
+                      styles.conversationScroll,
+                      Platform.OS === "web" ? WEB_EDGE_FADE_MASK : null,
+                    ]}
+                    contentContainerStyle={{ paddingBottom: 12 }}
+                    onContentSizeChange={scrollConversationToBottom}
+                  >
+                    {messages.length === 0 ? (
+                      <View style={styles.emptyCard}>
+                        <Text style={styles.emptyTitle}>No messages in this thread yet</Text>
+                        <Text style={styles.emptySub}>Start with a clear question to begin this conversation.</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.resultList}>
+                        {messages.map((item) => (
+                          <View
+                            key={item.id}
+                            style={[
+                              styles.chatBubble,
+                              item.role === "user" ? styles.chatBubbleUser : styles.chatBubbleAssistant,
+                            ]}
+                          >
+                            {item.role === "assistant" && <Text style={styles.chatBubbleRole}>TripGuard</Text>}
+                            {item.role === "user" && !!item.attachments?.length && (
+                              <View style={styles.sentAttachmentRow}>
+                                {item.attachments.map((attachment, idx) => (
+                                  <Image
+                                    key={`${item.id}-att-${idx.toString()}`}
+                                    source={{ uri: attachment.uri }}
+                                    style={styles.sentAttachmentThumb}
+                                  />
+                                ))}
+                              </View>
+                            )}
+                            <Text style={styles.chatBubbleText}>{item.content}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </ScrollView>
+                </View>
               </View>
-              <Text style={styles.pendingLabel}>📷 Sign attached — add your question below</Text>
+
+              {!isAssessmentCollapsed && (
+                <View style={styles.rightPane}>
+                  <View style={[styles.sectionCard, styles.logCard]}>
+                  <SectionHeader
+                    eyebrow="Assessment log"
+                    title="Most recent checks"
+                    detail="This panel tracks analyzed scenarios for the active chat only."
+                  />
+
+                  {isLoading && (
+                    <View style={styles.loadingCard}>
+                      <StatusPill state="checking" />
+                      <Text style={styles.loadingText}>
+                        Checking legal posture and consequence before returning an answer.
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.assessmentScrollWrap}>
+                    <ScrollView
+                      showsVerticalScrollIndicator={false}
+                      style={[
+                        styles.assessmentScroll,
+                        Platform.OS === "web" ? WEB_ASSESSMENT_BOTTOM_FADE_MASK : null,
+                      ]}
+                    >
+                      {assessmentItems.length === 0 && !isLoading ? (
+                        <View style={styles.emptyCard}>
+                          <Text style={styles.emptyTitle}>No scenario checked yet</Text>
+                          <Text style={styles.emptySub}>
+                            Start with the object, place, or action that feels uncertain.
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.resultList}>
+                          {assessmentItems.map((item) => (
+                            <View key={item.id} style={styles.resultCard}>
+                              <View style={styles.resultHeader}>
+                                <View style={styles.resultHeaderLeft}>
+                                  <StatusPill state={item.state} />
+                                  <Text style={styles.resultLabel}>Scenario</Text>
+                                </View>
+                                <TouchableOpacity
+                                  style={styles.resultDeleteBtn}
+                                  onPress={() => void handleDeleteAssessment(item.id)}
+                                  disabled={deletingAssessmentId === item.id}
+                                >
+                                  <Ionicons
+                                    name="trash-outline"
+                                    size={14}
+                                    color={mobileTheme.colors.textSecondary}
+                                  />
+                                </TouchableOpacity>
+                              </View>
+                              <Text style={styles.resultQuery}>{item.query}</Text>
+                              <Text style={styles.resultAnswer}>{item.content}</Text>
+                              <Text style={styles.resultTime}>{formatDateTime(item.created_at)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </ScrollView>
+                    {Platform.OS !== "web" && <View pointerEvents="none" style={styles.assessmentFadeFallback} />}
+                  </View>
+                </View>
+                </View>
+              )}
             </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.screenContent, { paddingBottom: composerHeight + 12 }]}>
+              <View style={[styles.sectionCard, styles.conversationCardNarrow]}>
+                <ScrollView
+                  ref={conversationScrollRef}
+                  showsVerticalScrollIndicator={false}
+                  style={[
+                    styles.conversationScrollNarrow,
+                    Platform.OS === "web" ? WEB_EDGE_FADE_MASK : null,
+                  ]}
+                  onContentSizeChange={scrollConversationToBottom}
+                >
+                  {messages.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                      <Text style={styles.emptyTitle}>No messages in this thread yet</Text>
+                      <Text style={styles.emptySub}>Start with a clear question to begin this conversation.</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.resultList}>
+                      {messages.map((item) => (
+                        <View
+                          key={item.id}
+                          style={[
+                            styles.chatBubble,
+                            item.role === "user" ? styles.chatBubbleUser : styles.chatBubbleAssistant,
+                          ]}
+                        >
+                          {item.role === "assistant" && <Text style={styles.chatBubbleRole}>TripGuard</Text>}
+                          {item.role === "user" && !!item.attachments?.length && (
+                            <View style={styles.sentAttachmentRow}>
+                              {item.attachments.map((attachment, idx) => (
+                                <Image
+                                  key={`${item.id}-att-${idx.toString()}`}
+                                  source={{ uri: attachment.uri }}
+                                  style={styles.sentAttachmentThumb}
+                                />
+                              ))}
+                            </View>
+                          )}
+                          <Text style={styles.chatBubbleText}>{item.content}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+
+              <View style={styles.sectionCard}>
+                <SectionHeader
+                  eyebrow="Assessment log"
+                  title="Most recent checks"
+                  detail="TripGuard keeps the latest decision trail visible so the user does not need to reconstruct context."
+                />
+
+                {isLoading && (
+                  <View style={styles.loadingCard}>
+                    <StatusPill state="checking" />
+                    <Text style={styles.loadingText}>
+                      Checking legal posture and consequence before returning an answer.
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.assessmentScrollWrap}>
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    style={[
+                      styles.assessmentScroll,
+                      Platform.OS === "web" ? WEB_ASSESSMENT_BOTTOM_FADE_MASK : null,
+                    ]}
+                  >
+                    {assessmentItems.length === 0 && !isLoading ? (
+                      <View style={styles.emptyCard}>
+                        <Text style={styles.emptyTitle}>No scenario checked yet</Text>
+                        <Text style={styles.emptySub}>
+                          Start with the object, place, or action that feels uncertain.
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.resultList}>
+                        {assessmentItems.map((item) => (
+                          <View key={item.id} style={styles.resultCard}>
+                            <View style={styles.resultHeader}>
+                              <View style={styles.resultHeaderLeft}>
+                                <StatusPill state={item.state} />
+                                <Text style={styles.resultLabel}>Scenario</Text>
+                              </View>
+                              <TouchableOpacity
+                                style={styles.resultDeleteBtn}
+                                onPress={() => void handleDeleteAssessment(item.id)}
+                                disabled={deletingAssessmentId === item.id}
+                              >
+                                <Ionicons
+                                  name="trash-outline"
+                                  size={14}
+                                  color={mobileTheme.colors.textSecondary}
+                                />
+                              </TouchableOpacity>
+                            </View>
+                            <Text style={styles.resultQuery}>{item.query}</Text>
+                            <Text style={styles.resultAnswer}>{item.content}</Text>
+                            <Text style={styles.resultTime}>{formatDateTime(item.created_at)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </ScrollView>
+                  {Platform.OS !== "web" && <View pointerEvents="none" style={styles.assessmentFadeFallback} />}
+                </View>
+              </View>
+            </ScrollView>
           )}
 
-          <View style={styles.inputRow}>
-            <TouchableOpacity
-              style={[styles.iconBtn, !!pendingImage && styles.iconBtnActive]}
-              onPress={pickImage}
-              disabled={isLoading}
+          <View style={styles.composerDock}>
+            <View
+              style={styles.composerCard}
+              onLayout={(event) => {
+                const h = Math.ceil(event.nativeEvent.layout.height);
+                if (h !== composerHeight) setComposerHeight(h);
+              }}
             >
-              <Ionicons
-                name={pendingImage ? "camera" : "camera-outline"}
-                size={20}
-                color={COLORS.teal}
-              />
-            </TouchableOpacity>
-            <TextInput
-              style={styles.input}
-              value={input}
-              onChangeText={setInput}
-              placeholder={pendingImage ? "Ask about this sign..." : "Ask a legal question..."}
-              placeholderTextColor={COLORS.textMuted}
-              multiline
-              maxLength={500}
-              returnKeyType="send"
-              onSubmitEditing={() => sendMessage(input)}
-            />
-            <TouchableOpacity
-              style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-              onPress={() => sendMessage(input)}
-              disabled={!canSend}
-            >
-              <Ionicons name="send" size={16} color="#fff" />
-            </TouchableOpacity>
+              {attachments.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.attachmentRow}
+                >
+                  {attachments.map((attachment) => (
+                    <View key={attachment.id} style={styles.attachmentThumbWrap}>
+                      <Image source={{ uri: attachment.uri }} style={styles.attachmentThumb} />
+                      <TouchableOpacity
+                        style={styles.attachmentRemoveBtn}
+                        onPress={() => setAttachments((prev) => prev.filter((a) => a.id !== attachment.id))}
+                      >
+                        <Ionicons name="close" size={12} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+
+              <View style={styles.quickRow}>
+                {quickScenarios.map((scenario) => (
+                  <TouchableOpacity
+                    key={scenario}
+                    style={styles.quickChip}
+                    onPress={() => setInput(scenario)}
+                  >
+                    <Text style={styles.quickChipText}>{scenario}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.inputRow}>
+                <TouchableOpacity style={styles.iconBtn} onPress={pickImage} disabled={isLoading}>
+                  <Ionicons name="camera-outline" size={20} color={mobileTheme.colors.primary} />
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.input}
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder="Example: Can I carry prescription medicine into Vietnam?"
+                  placeholderTextColor="#8E7F6E"
+                  multiline
+                  maxLength={500}
+                  returnKeyType="send"
+                  onKeyPress={handleComposerKeyPress}
+                  onSubmitEditing={() => sendMessage(input)}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.sendBtn,
+                    (!input.trim() && attachments.length === 0 || isLoading) && styles.sendBtnDisabled,
+                  ]}
+                  onPress={() => sendMessage(input)}
+                  disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                >
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-        </BlurView>
+        </View>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </ScreenSurface>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: {
+  chatRoot: {
+    flex: 1,
+  },
+  wideLayout: {
+    flex: 1,
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    gap: 14,
+    paddingBottom: 24,
     paddingHorizontal: 20,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.glassBorder,
-    backgroundColor: "rgba(10, 22, 40, 0.6)",
   },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  shieldBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: COLORS.tealGlass,
+  leftPane: {
+    flex: 1.6,
+  },
+  leftPaneExpanded: {
+    flex: 1,
+  },
+  rightPane: {
+    flex: 1,
+    paddingTop: 2,
+  },
+  logCard: {
+    flex: 1,
+  },
+  screenContent: {
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+  },
+  sectionCard: {
+    backgroundColor: mobileTheme.colors.surface,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: COLORS.tealBorder,
-    justifyContent: "center",
-    alignItems: "center",
+    borderColor: mobileTheme.colors.line,
+    padding: 18,
+    gap: 12,
+    marginBottom: 16,
   },
-  shieldEmoji: { fontSize: 22 },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: COLORS.textPrimary, letterSpacing: -0.3 },
-  headerSub: { fontSize: 11, color: COLORS.textSecondary },
-  onlinePill: {
+  topActionsRow: {
+    alignItems: "flex-end",
+    marginBottom: 8,
+  },
+  assessmentToggleBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    backgroundColor: COLORS.okGlass,
+    gap: 6,
     borderWidth: 1,
-    borderColor: COLORS.okBorder,
-    borderRadius: 12,
+    borderColor: mobileTheme.colors.line,
+    backgroundColor: mobileTheme.colors.surface,
+    borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 6,
   },
-  onlineDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.ok },
-  onlineText: { fontSize: 11, color: COLORS.ok, fontWeight: "600" },
-
-  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", padding: 40 },
-  emptyEmoji: { fontSize: 52, marginBottom: 18 },
-  emptyTitle: { fontSize: 22, fontWeight: "700", color: COLORS.textPrimary, marginBottom: 10 },
-  emptySub: { fontSize: 15, color: COLORS.textSecondary, textAlign: "center", lineHeight: 22 },
-
-  inputWrap: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.glassBorder,
-    backgroundColor: "rgba(10, 22, 40, 0.65)",
-    paddingTop: 10,
-    paddingHorizontal: 14,
+  assessmentToggleText: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
-
-  // Pending image attachment
-  pendingImageRow: {
-    flexDirection: "row",
-    alignItems: "center",
+  conversationCardWide: {
+    flex: 1,
+  },
+  conversationCardNarrow: {
+    minHeight: 320,
+  },
+  conversationScroll: {
+    flex: 1,
+  },
+  conversationScrollNarrow: {
+    maxHeight: 360,
+  },
+  assessmentScrollWrap: {
+    position: "relative",
+    flex: 1,
+  },
+  assessmentScroll: {
+    flex: 1,
+  },
+  assessmentFadeFallback: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 44,
+    backgroundColor: "rgba(246, 241, 232, 0.55)",
+  },
+  composerDock: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    bottom: 12,
+  },
+  composerCard: {
+    backgroundColor: mobileTheme.colors.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    padding: 14,
     gap: 10,
-    marginBottom: 10,
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  pendingThumbWrap: {
+  attachmentRow: {
+    gap: 8,
+    paddingBottom: 2,
+  },
+  attachmentThumbWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    overflow: "hidden",
+    backgroundColor: mobileTheme.colors.surfaceAlt,
     position: "relative",
   },
-  pendingThumb: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: COLORS.tealBorder,
+  attachmentThumb: {
+    width: "100%",
+    height: "100%",
   },
-  removeThumbBtn: {
+  attachmentRemoveBtn: {
     position: "absolute",
-    top: -8,
-    right: -8,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: COLORS.error,
-    justifyContent: "center",
+    top: 3,
+    right: 3,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "rgba(16, 36, 59, 0.8)",
     alignItems: "center",
+    justifyContent: "center",
   },
-  pendingLabel: {
-    flex: 1,
-    fontSize: 12,
-    color: COLORS.teal,
+  quickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  quickChip: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  quickChipText: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 13,
     fontWeight: "500",
-    lineHeight: 17,
   },
-
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 8,
+    gap: 10,
+    marginTop: 4,
   },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.tealGlass,
-    borderWidth: 1,
-    borderColor: COLORS.tealBorder,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: mobileTheme.colors.primarySoft,
     justifyContent: "center",
     alignItems: "center",
-  },
-  iconBtnActive: {
-    backgroundColor: COLORS.teal + "40",
-    borderColor: COLORS.teal,
   },
   input: {
     flex: 1,
-    backgroundColor: COLORS.glass,
+    backgroundColor: mobileTheme.colors.surfaceAlt,
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     fontSize: 15,
-    color: COLORS.textPrimary,
-    maxHeight: 120,
+    color: mobileTheme.colors.textPrimary,
+    maxHeight: 140,
     borderWidth: 1,
-    borderColor: COLORS.glassBorder,
+    borderColor: mobileTheme.colors.line,
+    fontFamily: mobileTheme.fonts.body,
   },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.teal,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: mobileTheme.colors.surfaceStrong,
     justifyContent: "center",
     alignItems: "center",
   },
-  sendBtnDisabled: { backgroundColor: COLORS.glass, borderWidth: 1, borderColor: COLORS.glassBorder },
+  sendBtnDisabled: {
+    backgroundColor: "#A49787",
+  },
+  loadingCard: {
+    backgroundColor: mobileTheme.colors.primarySoft,
+    borderRadius: 18,
+    padding: 16,
+    gap: 10,
+  },
+  loadingText: {
+    color: mobileTheme.colors.primary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  emptyCard: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 18,
+    padding: 18,
+    gap: 6,
+  },
+  emptyTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  emptySub: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  resultList: {
+    gap: 12,
+  },
+  resultCard: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 20,
+    padding: 16,
+    gap: 10,
+  },
+  resultHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+  },
+  resultHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+  },
+  resultDeleteBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: mobileTheme.colors.surface,
+  },
+  resultLabel: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  resultQuery: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
+  },
+  resultAnswer: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  resultTime: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    fontWeight: "600",
+    alignSelf: "flex-end",
+    marginTop: 2,
+    opacity: 0.82,
+  },
+  chatBubble: {
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    gap: 4,
+    maxWidth: "86%",
+  },
+  chatBubbleUser: {
+    backgroundColor: mobileTheme.colors.primarySoft,
+    borderColor: "rgba(30,58,138,0.2)",
+    alignSelf: "flex-end",
+    maxWidth: "54%",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  chatBubbleAssistant: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderColor: mobileTheme.colors.line,
+    alignSelf: "flex-start",
+  },
+  chatBubbleRole: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  chatBubbleText: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  sentAttachmentRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 4,
+  },
+  sentAttachmentThumb: {
+    width: 62,
+    height: 62,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+  },
 });

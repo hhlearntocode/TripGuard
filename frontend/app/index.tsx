@@ -1,29 +1,31 @@
 import { useEffect } from "react";
 import { useRouter } from "expo-router";
 import { loadUserProfile } from "@/hooks/useUserProfile";
-import { View, ActivityIndicator } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { COLORS } from "@/constants/theme";
+import { View, ActivityIndicator, Platform } from "react-native";
+import TripGuardLanding from "@/components/landing/TripGuardLanding";
 
 export default function Index() {
   const router = useRouter();
 
   useEffect(() => {
+    if (Platform.OS === "web") return;
+
     loadUserProfile().then((profile) => {
       if (profile) {
-        router.replace("/(tabs)/chat");
+        router.replace("/(tabs)/checklist");
       } else {
         router.replace("/onboarding/profile");
       }
     });
   }, []);
 
+  if (Platform.OS === "web") {
+    return <TripGuardLanding />;
+  }
+
   return (
-    <LinearGradient
-      colors={[COLORS.bg, COLORS.bg2]}
-      style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-    >
-      <ActivityIndicator size="large" color={COLORS.teal} />
-    </LinearGradient>
+    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <ActivityIndicator size="large" color="#14B8A6" />
+    </View>
   );
 }

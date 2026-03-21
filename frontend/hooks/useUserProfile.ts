@@ -17,7 +17,14 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 export async function loadUserProfile(): Promise<UserProfile | null> {
   const raw = await AsyncStorage.getItem(PROFILE_KEY);
   if (!raw) return null;
-  return JSON.parse(raw) as UserProfile;
+  const parsed = JSON.parse(raw) as Partial<UserProfile>;
+  return {
+    nationality: parsed.nationality || "",
+    idp_type: parsed.idp_type || "None",
+    visa_free_days: parsed.visa_free_days || 0,
+    has_drone: !!parsed.has_drone,
+    drone_model: parsed.drone_model || "None",
+  };
 }
 
 export async function clearUserProfile(): Promise<void> {

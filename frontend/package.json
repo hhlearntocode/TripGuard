@@ -9,6 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo-google-fonts/rubik": "^0.4.2",
     "@expo/vector-icons": "^14.0.2",
     "@react-native-async-storage/async-storage": "1.23.1",
     "expo": "~51.0.0",
@@ -30,8 +31,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
-    "typescript": "~5.3.3",
-    "@types/react": "~18.2.79"
+    "@types/react": "~18.2.79",
+    "typescript": "~5.3.3"
   },
   "private": true
 }
