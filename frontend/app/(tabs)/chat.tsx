@@ -6,7 +6,6 @@ import {
   Linking,
   NativeSyntheticEvent,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -413,7 +412,7 @@ export default function ChatScreen() {
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const [isProcessingVoiceInput, setIsProcessingVoiceInput] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [isQuickTrayHovered, setIsQuickTrayHovered] = useState(false);
+  const [isQuickTrayOpen, setIsQuickTrayOpen] = useState(false);
   const conversationScrollRef = useRef<ScrollView | null>(null);
   const draftBeforeRecordingRef = useRef("");
 
@@ -583,6 +582,9 @@ export default function ChatScreen() {
 
   const sendMessage = async (text: string, options: { origin?: MessageOrigin } = {}) => {
     if ((!text.trim() && attachments.length === 0) || isLoading || !profile || !threadReady) return;
+    if (Platform.OS === "web") {
+      setIsQuickTrayOpen(false);
+    }
 
     let threadId = activeChatId;
     if (!threadId) {
@@ -827,7 +829,7 @@ export default function ChatScreen() {
     (!input.trim() && attachments.length === 0) || isLoading || isRecording || isProcessingVoiceInput;
   const isMicDisabled =
     !isVoiceSupported || isLoading || !profile || !threadReady || isConnectingVoice;
-  const isQuickTrayExpanded = Platform.OS !== "web" || isQuickTrayHovered;
+  const isQuickTrayExpanded = Platform.OS !== "web" || isQuickTrayOpen;
   const voiceStatusText = isConnectingVoice
     ? "Starting microphone..."
     : isRecording
@@ -1149,24 +1151,28 @@ export default function ChatScreen() {
               )}
 
               {Platform.OS === "web" ? (
-                <Pressable
-                  style={styles.quickTrayArea}
-                  onHoverIn={() => setIsQuickTrayHovered(true)}
-                  onHoverOut={() => setIsQuickTrayHovered(false)}
-                >
-                  <View style={styles.quickTrayTrigger}>
+                <View style={styles.quickTrayArea}>
+                  <TouchableOpacity
+                    style={styles.quickTrayTrigger}
+                    onPress={() => setIsQuickTrayOpen((prev) => !prev)}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel={isQuickTrayExpanded ? "Hide quick prompts" : "Show quick prompts"}
+                  >
                     <BlurView intensity={22} tint="light" style={styles.quickTrayTriggerBlur}>
                       <View style={styles.quickTrayTriggerCopy}>
                         <Text style={styles.quickTrayLabel}>Quick prompts</Text>
-                        <Text style={styles.quickTrayHint}>Move here to expand</Text>
+                        <Text style={styles.quickTrayHint}>
+                          {isQuickTrayExpanded ? "Tap to hide" : "Tap to open"}
+                        </Text>
                       </View>
                       <Ionicons
-                        name={isQuickTrayExpanded ? "chevron-up" : "sparkles-outline"}
+                        name={isQuickTrayExpanded ? "chevron-up" : "chevron-down"}
                         size={14}
                         color={mobileTheme.colors.textSecondary}
                       />
                     </BlurView>
-                  </View>
+                  </TouchableOpacity>
 
                   {isQuickTrayExpanded && (
                     <View style={styles.quickTrayPopup}>
@@ -1178,7 +1184,7 @@ export default function ChatScreen() {
                               style={styles.quickChip}
                               onPress={() => {
                                 setInput(scenario);
-                                setIsQuickTrayHovered(false);
+                                setIsQuickTrayOpen(false);
                               }}
                             >
                               <Text style={styles.quickChipText}>{scenario}</Text>
@@ -1188,7 +1194,7 @@ export default function ChatScreen() {
                       </BlurView>
                     </View>
                   )}
-                </Pressable>
+                </View>
               ) : (
                 <View style={styles.quickRow}>
                   {quickScenarios.map((scenario) => (
@@ -1246,6 +1252,11 @@ export default function ChatScreen() {
                   style={styles.input}
                   value={composerInputValue}
                   onChangeText={setInput}
+                  onFocus={() => {
+                    if (Platform.OS === "web") {
+                      setIsQuickTrayOpen(false);
+                    }
+                  }}
                   placeholder={
                     isRecording
                       ? "Listening in English..."
