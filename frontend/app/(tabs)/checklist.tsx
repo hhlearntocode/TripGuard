@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
 import { getIdpStatus, getVisaFreeDays, DRONE_WEIGHTS } from "@/constants/legal";
+import ScreenSurface from "@/components/ui/ScreenSurface";
+import SectionHeader from "@/components/ui/SectionHeader";
+import StatusPill from "@/components/ui/StatusPill";
+import { mobileTheme } from "@/theme/mobileTheme";
 
 interface CheckItem {
   id: string;
@@ -17,9 +19,8 @@ interface CheckItem {
 
 function buildChecklist(profile: UserProfile): CheckItem[] {
   const items: CheckItem[] = [];
-
-  // IDP / License check
   const idp = getIdpStatus(profile.nationality);
+
   items.push({
     id: "idp",
     title: "International Driving Permit",
@@ -28,7 +29,6 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
     law: "NĐ 168/2024/NĐ-CP Điều 5",
   });
 
-  // Visa check
   const visaDays = getVisaFreeDays(profile.nationality);
   if (visaDays > 0) {
     items.push({
@@ -43,39 +43,29 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
       id: "visa",
       title: "Visa / Entry",
       status: "error",
-      detail: `${profile.nationality} citizens require an e-visa — apply at evisa.xuatnhapcanh.gov.vn`,
+      detail: `${profile.nationality} citizens require an e-visa before arrival`,
       law: "NĐ 07/2023/NĐ-CP",
     });
   }
 
-  // Drone check
   if (profile.has_drone) {
-    const droneInfo = DRONE_WEIGHTS[profile.drone_model] || DRONE_WEIGHTS["Other"];
-    if (droneInfo.requiresPermit) {
-      items.push({
-        id: "drone",
-        title: `Drone: ${profile.drone_model}`,
-        status: "error",
-        detail: `${droneInfo.weight}g — requires permit + Vietnamese organization sponsor before flying`,
-        law: "NĐ 288/2025/NĐ-CP",
-      });
-    } else {
-      items.push({
-        id: "drone",
-        title: `Drone: ${profile.drone_model}`,
-        status: "ok",
-        detail: `${droneInfo.weight}g — under 250g limit, no permit needed`,
-        law: "NĐ 288/2025/NĐ-CP",
-      });
-    }
+    const droneInfo = DRONE_WEIGHTS[profile.drone_model] || DRONE_WEIGHTS.Other;
+    items.push({
+      id: "drone",
+      title: `Drone: ${profile.drone_model}`,
+      status: droneInfo.requiresPermit ? "error" : "ok",
+      detail: droneInfo.requiresPermit
+        ? `${droneInfo.weight}g — permit and local sponsor should be assumed`
+        : `${droneInfo.weight}g — under 250g threshold`,
+      law: "NĐ 288/2025/NĐ-CP",
+    });
   }
 
-  // General reminders
   items.push({
     id: "helmet",
     title: "Motorbike Helmet",
     status: "warning",
-    detail: "Mandatory for all riders — fine 400,000–600,000 VND if not worn",
+    detail: "Mandatory for all riders. Enforcement is routine.",
     law: "NĐ 168/2024/NĐ-CP",
   });
 
@@ -83,7 +73,7 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
     id: "alcohol",
     title: "Alcohol Limit",
     status: "warning",
-    detail: "Zero tolerance for drink driving — any detectable alcohol level is illegal",
+    detail: "Any detectable alcohol level while driving is risky.",
     law: "NĐ 168/2024/NĐ-CP",
   });
 
@@ -91,7 +81,7 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
     id: "drugs",
     title: "Drug Laws",
     status: "warning",
-    detail: "Extremely strict — possession carries 2–20 year prison sentences",
+    detail: "TripGuard treats drug scenarios as high-risk by default.",
     law: "Bộ luật Hình sự 2015",
   });
 
@@ -99,12 +89,18 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
 }
 
 const STATUS_ICONS = {
-  ok:      { icon: "checkmark-circle",  color: "#10B981", bg: "#D1FAE5" },
-  warning: { icon: "warning",           color: "#F59E0B", bg: "#FEF3C7" },
-  error:   { icon: "close-circle",      color: "#EF4444", bg: "#FEE2E2" },
+  ok: { icon: "checkmark-circle-outline", color: mobileTheme.colors.success, bg: mobileTheme.colors.successSoft },
+  warning: { icon: "alert-circle-outline", color: mobileTheme.colors.warning, bg: mobileTheme.colors.warningSoft },
+  error: { icon: "close-circle-outline", color: mobileTheme.colors.danger, bg: mobileTheme.colors.dangerSoft },
 };
 
-export default function ChecklistScreen() {
+const QUICK_INTENTS = [
+  "Can I bring this into Vietnam?",
+  "Is this area restricted?",
+  "What happens if I do this?",
+];
+
+export default function BriefingScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const router = useRouter();
 
@@ -114,117 +110,272 @@ export default function ChecklistScreen() {
 
   if (!profile) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <Text style={styles.centerText}>Complete onboarding to see your checklist.</Text>
-          <TouchableOpacity style={styles.btn} onPress={() => router.push("/onboarding/profile")}>
-            <Text style={styles.btnText}>Set up profile</Text>
+      <ScreenSurface
+        title="Travel Briefing"
+        subtitle="TripGuard needs a profile before it can establish a legal posture."
+        scrollable={false}
+      >
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>Profile required</Text>
+          <Text style={styles.emptyBody}>Set up protected access to unlock your travel briefing.</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push("/onboarding/profile")}>
+            <Text style={styles.primaryButtonText}>Open intake</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </ScreenSurface>
     );
   }
 
   const items = buildChecklist(profile);
   const errors = items.filter((i) => i.status === "error").length;
   const warnings = items.filter((i) => i.status === "warning").length;
+  const readinessState = errors > 0 ? "restricted" : warnings > 0 ? "warning" : "safe";
+  const topSignals = items.slice(0, 4);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Travel Checklist</Text>
-        <Text style={styles.headerSub}>{profile.nationality} citizen</Text>
+    <ScreenSurface
+      title="Travel Briefing"
+      subtitle="Orient yourself before you ask a specific legal question."
+      rightNode={<StatusPill state={readinessState} />}
+    >
+      <View style={styles.heroCard}>
+        <Text style={styles.heroEyebrow}>
+          {profile.trust_tier === "protected" ? "Protected system active" : "Standard mode"}
+        </Text>
+        <Text style={styles.heroTitle}>
+          {errors > 0
+            ? "There are immediate legal exposures in your travel profile."
+            : warnings > 0
+              ? "Your trip is broadly viable, but a few conditions need attention."
+              : "Your profile is currently in a clear travel posture."}
+        </Text>
+        <Text style={styles.heroBody}>
+          TripGuard uses this briefing as a pre-check layer. Use the Check screen for scenario-specific legality.
+        </Text>
       </View>
 
-      {/* Summary bar */}
-      <View style={styles.summary}>
-        {errors > 0 && (
-          <View style={[styles.summaryBadge, { backgroundColor: "#FEE2E2" }]}>
-            <Text style={[styles.summaryText, { color: "#DC2626" }]}>{errors} issue{errors > 1 ? "s" : ""} ❌</Text>
-          </View>
-        )}
-        {warnings > 0 && (
-          <View style={[styles.summaryBadge, { backgroundColor: "#FEF3C7" }]}>
-            <Text style={[styles.summaryText, { color: "#D97706" }]}>{warnings} warning{warnings > 1 ? "s" : ""} ⚠️</Text>
-          </View>
-        )}
-        {errors === 0 && warnings === 0 && (
-          <View style={[styles.summaryBadge, { backgroundColor: "#D1FAE5" }]}>
-            <Text style={[styles.summaryText, { color: "#059669" }]}>All clear ✅</Text>
-          </View>
-        )}
+      <View style={styles.sectionCard}>
+        <SectionHeader
+          eyebrow="Core journey"
+          title="Start from a clear question, not broad browsing."
+          detail="TripGuard is strongest when you enter the decision you are about to make."
+        />
+        <View style={styles.intentGrid}>
+          {QUICK_INTENTS.map((intent) => (
+            <TouchableOpacity
+              key={intent}
+              style={styles.intentCard}
+              onPress={() => router.push({ pathname: "/(tabs)/chat", params: { query: intent } })}
+            >
+              <Ionicons name="arrow-forward-circle-outline" size={18} color={mobileTheme.colors.primary} />
+              <Text style={styles.intentText}>{intent}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.list}>
-        {items.map((item) => {
-          const s = STATUS_ICONS[item.status];
-          return (
-            <View key={item.id} style={[styles.card, { borderLeftColor: s.color }]}>
-              <View style={[styles.iconWrap, { backgroundColor: s.bg }]}>
-                <Ionicons name={s.icon as any} size={22} color={s.color} />
+      <View style={styles.sectionCard}>
+        <SectionHeader
+          eyebrow="Watchlist"
+          title="What TripGuard wants you to notice first."
+          detail="These are profile-level signals worth resolving before high-risk activity."
+        />
+        <View style={styles.signalList}>
+          {topSignals.map((item) => {
+            const s = STATUS_ICONS[item.status];
+            return (
+              <View key={item.id} style={styles.signalRow}>
+                <View style={[styles.signalIcon, { backgroundColor: s.bg }]}>
+                  <Ionicons name={s.icon as any} size={18} color={s.color} />
+                </View>
+                <View style={styles.signalCopy}>
+                  <Text style={styles.signalTitle}>{item.title}</Text>
+                  <Text style={styles.signalDetail}>{item.detail}</Text>
+                </View>
               </View>
-              <View style={styles.cardBody}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardDetail}>{item.detail}</Text>
-                {item.law && <Text style={styles.cardLaw}>Source: {item.law}</Text>}
-              </View>
-            </View>
-          );
-        })}
-      </ScrollView>
-    </SafeAreaView>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.sectionCard}>
+        <SectionHeader
+          eyebrow="Profile"
+          title="Briefing context"
+          detail="This is the context TripGuard is using before it evaluates your next scenario."
+        />
+        <View style={styles.profileGrid}>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>Nationality</Text>
+            <Text style={styles.metricValue}>{profile.nationality}</Text>
+          </View>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>Driving</Text>
+            <Text style={styles.metricValue}>{getIdpStatus(profile.nationality).convention}</Text>
+          </View>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>Visa</Text>
+            <Text style={styles.metricValue}>
+              {getVisaFreeDays(profile.nationality) > 0 ? `${getVisaFreeDays(profile.nationality)} days` : "Required"}
+            </Text>
+          </View>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>Drone</Text>
+            <Text style={styles.metricValue}>
+              {profile.has_drone ? `${DRONE_WEIGHTS[profile.drone_model]?.weight || "?"}g` : "None"}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </ScreenSurface>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F3F4F6" },
-  header: {
-    backgroundColor: "#fff",
+  heroCard: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+    borderRadius: 26,
     padding: 20,
-    borderBottomWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  headerTitle: { fontSize: 22, fontWeight: "800", color: "#1F2937" },
-  headerSub: { fontSize: 14, color: "#6B7280", marginTop: 2 },
-  summary: {
-    flexDirection: "row",
-    padding: 16,
     gap: 8,
-    flexWrap: "wrap",
   },
-  summaryBadge: {
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  heroEyebrow: {
+    color: "#E7C79B",
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.9,
   },
-  summaryText: { fontSize: 13, fontWeight: "700" },
-  list: { padding: 16, gap: 12 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+  heroTitle: {
+    color: mobileTheme.colors.textOnDark,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 24,
+    lineHeight: 31,
+    fontWeight: "700",
+  },
+  heroBody: {
+    color: "rgba(248, 244, 236, 0.76)",
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  sectionCard: {
+    backgroundColor: mobileTheme.colors.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    padding: 18,
+    gap: 12,
+  },
+  intentGrid: {
+    gap: 10,
+  },
+  intentCard: {
+    backgroundColor: mobileTheme.colors.primarySoft,
+    borderRadius: 18,
     padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  intentText: {
+    flex: 1,
+    color: mobileTheme.colors.primary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  signalList: {
+    gap: 12,
+  },
+  signalRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
-    borderLeftWidth: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  iconWrap: {
+  signalIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
   },
-  cardBody: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: "#1F2937", marginBottom: 4 },
-  cardDetail: { fontSize: 14, color: "#4B5563", lineHeight: 20 },
-  cardLaw: { fontSize: 11, color: "#9CA3AF", marginTop: 4 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 40 },
-  centerText: { fontSize: 16, color: "#6B7280", textAlign: "center", marginBottom: 20 },
-  btn: { backgroundColor: "#14B8A6", padding: 14, borderRadius: 10 },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  signalCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  signalTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  signalDetail: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  profileGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  metricCard: {
+    width: "48%",
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 18,
+    padding: 14,
+    gap: 6,
+  },
+  metricLabel: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  metricValue: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  emptyTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 28,
+    fontWeight: "700",
+  },
+  emptyBody: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    maxWidth: 300,
+  },
+  primaryButton: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 999,
+    marginTop: 6,
+  },
+  primaryButtonText: {
+    color: mobileTheme.colors.textOnDark,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
 });

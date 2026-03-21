@@ -1,44 +1,72 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, SafeAreaView, Alert,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import ChatBubble from "@/components/ChatBubble";
-import QuickActions from "@/components/QuickActions";
+import { useLocalSearchParams } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
+import ScreenSurface from "@/components/ui/ScreenSurface";
+import SectionHeader from "@/components/ui/SectionHeader";
+import StatusPill from "@/components/ui/StatusPill";
+import { deriveLegalityState, getLegalityTone, LegalityUiState } from "@/features/flows";
+import { mobileTheme } from "@/theme/mobileTheme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
 
 interface Message {
   id: string;
-  role: "user" | "assistant";
+  query: string;
   content: string;
+  state: LegalityUiState;
 }
 
 export default function ChatScreen() {
+  const params = useLocalSearchParams<{ query?: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const flatListRef = useRef<FlatList>(null);
+  const [uiState, setUiState] = useState<LegalityUiState>("uncertain");
+
+  const quickScenarios = useMemo(
+    () => [
+      "Can I bring this into Vietnam?",
+      "Is this area restricted for foreigners?",
+      "What happens if I do this?",
+      "Can I ride here with my current license?",
+    ],
+    []
+  );
 
   useEffect(() => {
     loadUserProfile().then(setProfile);
   }, []);
 
+  useEffect(() => {
+    if (!params.query || Array.isArray(params.query)) return;
+    setInput(params.query);
+  }, [params.query]);
+
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading || !profile) return;
 
-    const userMsg: Message = { id: Date.now().toString(), role: "user", content: text };
-    const loadingMsg: Message = { id: "loading", role: "assistant", content: "" };
-
-    setMessages((prev) => [...prev, userMsg, loadingMsg]);
+    setUiState("checking");
     setInput("");
     setIsLoading(true);
 
-    const history = messages.map((m) => ({ role: m.role, content: m.content }));
+    const history = messages.flatMap((m) => ([
+      { role: "user", content: m.query },
+      { role: "assistant", content: m.content },
+    ]));
 
     try {
       const resp = await fetch(`${API_URL}/api/chat`, {
@@ -51,17 +79,23 @@ export default function ChatScreen() {
         }),
       });
       const data = await resp.json();
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
+      const nextState = deriveLegalityState(data.answer || "");
+      const nextMessage: Message = {
+        id: Date.now().toString(),
+        query: text,
         content: data.answer,
+        state: nextState,
       };
-      setMessages((prev) => [...prev.filter((m) => m.id !== "loading"), assistantMsg]);
+      setMessages((prev) => [nextMessage, ...prev]);
+      setUiState(nextState);
     } catch (e) {
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== "loading"),
-        { id: "err", role: "assistant", content: "Network error — check your connection." },
-      ]);
+      setMessages((prev) => [{
+        id: `err-${Date.now().toString()}`,
+        query: text,
+        content: "TripGuard could not verify the scenario right now. Check your connection and retry.",
+        state: "warning",
+      }, ...prev]);
+      setUiState("warning");
     } finally {
       setIsLoading(false);
     }
@@ -103,141 +137,238 @@ export default function ChatScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerEmoji}>🛡️</Text>
-          <View>
-            <Text style={styles.headerTitle}>TripGuard</Text>
-            <Text style={styles.headerSub}>AI Legal Companion</Text>
-          </View>
-        </View>
-        <View style={styles.onlineDot} />
-      </View>
-
-      {/* Messages */}
+    <ScreenSurface
+      title="Legality Check"
+      subtitle={getLegalityTone(uiState)}
+      rightNode={<StatusPill state={isLoading ? "checking" : uiState} />}
+      scrollable={false}
+    >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={0}
       >
-        {messages.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>⚖️</Text>
-            <Text style={styles.emptyTitle}>Ask me anything legal</Text>
-            <Text style={styles.emptySub}>
-              "Can I do this here?" — I'll tell you exactly what the law says.
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(m) => m.id}
-            renderItem={({ item }) => (
-              <ChatBubble
-                role={item.role}
-                content={item.content}
-                isLoading={item.id === "loading" && isLoading}
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.screenContent}>
+          <View style={styles.sectionCard}>
+            <SectionHeader
+              eyebrow="Scenario input"
+              title="State the decision before you make it."
+              detail="TripGuard performs best when the action, object, or location is explicit."
+            />
+
+            <View style={styles.quickRow}>
+              {quickScenarios.map((scenario) => (
+                <TouchableOpacity
+                  key={scenario}
+                  style={styles.quickChip}
+                  onPress={() => setInput(scenario)}
+                >
+                  <Text style={styles.quickChipText}>{scenario}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.inputRow}>
+              <TouchableOpacity style={styles.iconBtn} onPress={pickImage} disabled={isLoading}>
+                <Ionicons name="camera-outline" size={20} color={mobileTheme.colors.primary} />
+              </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                value={input}
+                onChangeText={setInput}
+                placeholder="Example: Can I carry prescription medicine into Vietnam?"
+                placeholderTextColor="#8E7F6E"
+                multiline
+                maxLength={500}
+                returnKeyType="send"
+                onSubmitEditing={() => sendMessage(input)}
               />
+              <TouchableOpacity
+                style={[styles.sendBtn, (!input.trim() || isLoading) && styles.sendBtnDisabled]}
+                onPress={() => sendMessage(input)}
+                disabled={!input.trim() || isLoading}
+              >
+                <Ionicons name="arrow-forward" size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.sectionCard}>
+            <SectionHeader
+              eyebrow="Assessment log"
+              title="Most recent checks"
+              detail="TripGuard keeps the latest decision trail visible so the user does not need to reconstruct context."
+            />
+
+            {isLoading && (
+              <View style={styles.loadingCard}>
+                <StatusPill state="checking" />
+                <Text style={styles.loadingText}>
+                  Checking legal posture and consequence before returning an answer.
+                </Text>
+              </View>
             )}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            contentContainerStyle={{ paddingVertical: 12 }}
-          />
-        )}
 
-        <QuickActions
-          onSelect={sendMessage}
-          visible={messages.length === 0 && !isLoading}
-        />
-
-        {/* Input bar */}
-        <View style={styles.inputRow}>
-          <TouchableOpacity style={styles.iconBtn} onPress={pickImage} disabled={isLoading}>
-            <Ionicons name="camera-outline" size={22} color="#14B8A6" />
-          </TouchableOpacity>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Ask a legal question..."
-            placeholderTextColor="#9CA3AF"
-            multiline
-            maxLength={500}
-            returnKeyType="send"
-            onSubmitEditing={() => sendMessage(input)}
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, (!input.trim() || isLoading) && styles.sendBtnDisabled]}
-            onPress={() => sendMessage(input)}
-            disabled={!input.trim() || isLoading}
-          >
-            <Ionicons name="send" size={18} color="#fff" />
-          </TouchableOpacity>
-        </View>
+            {messages.length === 0 && !isLoading ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No scenario checked yet</Text>
+                <Text style={styles.emptySub}>
+                  Start with the object, place, or action that feels uncertain.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.resultList}>
+                {messages.map((item) => (
+                  <View key={item.id} style={styles.resultCard}>
+                    <View style={styles.resultHeader}>
+                      <StatusPill state={item.state} />
+                      <Text style={styles.resultLabel}>Scenario</Text>
+                    </View>
+                    <Text style={styles.resultQuery}>{item.query}</Text>
+                    <Text style={styles.resultAnswer}>{item.content}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenSurface>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F3F4F6" },
-  header: {
-    backgroundColor: "#fff",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderColor: "#E5E7EB",
+  screenContent: {
+    paddingBottom: 24,
   },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  headerEmoji: { fontSize: 26 },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: "#1F2937" },
-  headerSub: { fontSize: 12, color: "#6B7280" },
-  onlineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#10B981" },
-  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", padding: 40 },
-  emptyEmoji: { fontSize: 48, marginBottom: 16 },
-  emptyTitle: { fontSize: 20, fontWeight: "700", color: "#1F2937", marginBottom: 8 },
-  emptySub: { fontSize: 15, color: "#6B7280", textAlign: "center", lineHeight: 22 },
+  sectionCard: {
+    backgroundColor: mobileTheme.colors.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    padding: 18,
+    gap: 12,
+    marginBottom: 16,
+  },
+  quickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  quickChip: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  quickChipText: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 13,
+    fontWeight: "500",
+  },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    padding: 12,
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-    borderColor: "#E5E7EB",
-    gap: 8,
+    gap: 10,
+    marginTop: 4,
   },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F0FDFA",
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: mobileTheme.colors.primarySoft,
     justifyContent: "center",
     alignItems: "center",
   },
   input: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
+    backgroundColor: mobileTheme.colors.surfaceAlt,
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     fontSize: 15,
-    color: "#1F2937",
-    maxHeight: 120,
+    color: mobileTheme.colors.textPrimary,
+    maxHeight: 140,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: mobileTheme.colors.line,
+    fontFamily: mobileTheme.fonts.body,
   },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#14B8A6",
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: mobileTheme.colors.surfaceStrong,
     justifyContent: "center",
     alignItems: "center",
   },
-  sendBtnDisabled: { backgroundColor: "#9CA3AF" },
+  sendBtnDisabled: {
+    backgroundColor: "#A49787",
+  },
+  loadingCard: {
+    backgroundColor: mobileTheme.colors.primarySoft,
+    borderRadius: 18,
+    padding: 16,
+    gap: 10,
+  },
+  loadingText: {
+    color: mobileTheme.colors.primary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  emptyCard: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 18,
+    padding: 18,
+    gap: 6,
+  },
+  emptyTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  emptySub: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  resultList: {
+    gap: 12,
+  },
+  resultCard: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 20,
+    padding: 16,
+    gap: 10,
+  },
+  resultHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+  },
+  resultLabel: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  resultQuery: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
+  },
+  resultAnswer: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 22,
+  },
 });

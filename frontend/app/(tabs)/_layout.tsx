@@ -6,34 +6,34 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#14B8A6",
-        tabBarInactiveTintColor: "#9CA3AF",
+        tabBarActiveTintColor: "#B45309",
+        tabBarInactiveTintColor: "#8E7F6E",
         tabBarStyle: {
-          backgroundColor: "#fff",
-          borderTopColor: "#E5E7EB",
+          backgroundColor: "#FFFDF9",
+          borderTopColor: "#D9D0C3",
           height: Platform.OS === "ios" ? 88 : 60,
           paddingBottom: Platform.OS === "ios" ? 28 : 8,
           paddingTop: 8,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
         headerShown: false,
       }}
     >
       <Tabs.Screen
-        name="chat"
+        name="checklist"
         options={{
-          title: "Chat",
+          title: "Briefing",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-outline" size={size} color={color} />
+            <Ionicons name="compass-outline" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="checklist"
+        name="chat"
         options={{
-          title: "Checklist",
+          title: "Check",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="checkbox-outline" size={size} color={color} />
+            <Ionicons name="shield-checkmark-outline" size={size} color={color} />
           ),
         }}
       />
@@ -42,7 +42,7 @@ export default function TabLayout() {
         options={{
           title: "Emergency",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="alert-circle-outline" size={size} color={color} />
+            <Ionicons name="pulse-outline" size={size} color={color} />
           ),
         }}
       />

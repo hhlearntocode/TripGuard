@@ -1,21 +1,31 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  SafeAreaView, Switch, TextInput, Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { saveUserProfile } from "@/hooks/useUserProfile";
 import { NATIONALITIES, getIdpStatus, getVisaFreeDays, DRONE_WEIGHTS } from "@/constants/legal";
+import ScreenSurface from "@/components/ui/ScreenSurface";
+import SectionHeader from "@/components/ui/SectionHeader";
+import HoldToConfirm from "@/components/ui/HoldToConfirm";
+import { AccessFlowState } from "@/features/flows";
+import { mobileTheme } from "@/theme/mobileTheme";
 
 const DRONE_MODELS = Object.keys(DRONE_WEIGHTS);
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [step, setStep] = useState(0);
   const [nationality, setNationality] = useState("");
   const [search, setSearch] = useState("");
   const [hasDrone, setHasDrone] = useState(false);
   const [droneModel, setDroneModel] = useState("DJI Mini 4 Pro");
+  const [accessFlow, setAccessFlow] = useState<AccessFlowState>("sealed");
 
   const filtered = NATIONALITIES.filter((n) =>
     n.toLowerCase().includes(search.toLowerCase())
@@ -24,7 +34,7 @@ export default function ProfileScreen() {
   const idpInfo = nationality ? getIdpStatus(nationality) : null;
   const visaFreeDays = nationality ? getVisaFreeDays(nationality) : 0;
 
-  async function handleFinish() {
+  async function handleFinish(trustTier: "observer" | "protected") {
     const idp = idpInfo;
     let idpType = "None";
     if (idp) {
@@ -40,230 +50,366 @@ export default function ProfileScreen() {
       visa_free_days: visaFreeDays,
       has_drone: hasDrone,
       drone_model: hasDrone ? droneModel : "None",
+      trust_tier: trustTier,
     });
-    router.replace("/(tabs)/chat");
+    router.replace("/(tabs)/checklist");
   }
 
+  useEffect(() => {
+    if (accessFlow !== "granted") return;
+    handleFinish("protected");
+  }, [accessFlow]);
+
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.logoRow}>
-          <Text style={styles.logo}>🛡️</Text>
-          <Text style={styles.logoText}>TripGuard</Text>
-        </View>
-        <Text style={styles.subtitle}>AI Legal Companion for Vietnam</Text>
-        <View style={styles.stepIndicator}>
-          {[0, 1, 2].map((i) => (
-            <View key={i} style={[styles.dot, step >= i && styles.dotActive]} />
-          ))}
-        </View>
+    <ScreenSurface
+      title="Protected Access Intake"
+      subtitle="Establish the minimum profile needed to reduce ambiguity before you travel."
+    >
+      <View style={styles.heroCard}>
+        <View style={styles.heroLine} />
+        <Text style={styles.heroEyebrow}>Exclusive travel mode</Text>
+        <Text style={styles.heroTitle}>TripGuard starts with a controlled profile, not a casual sign-up.</Text>
+        <Text style={styles.heroBody}>
+          The app uses your travel context to keep legal answers calmer, faster, and harder to misread.
+        </Text>
       </View>
 
-      <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-        {step === 0 && (
-          <View>
-            <Text style={styles.stepTitle}>Select your nationality</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search country..."
-              value={search}
-              onChangeText={setSearch}
-              placeholderTextColor="#9CA3AF"
-            />
-            {filtered.map((n) => (
-              <TouchableOpacity
-                key={n}
-                style={[styles.option, nationality === n && styles.optionSelected]}
-                onPress={() => setNationality(n)}
-              >
-                <Text style={[styles.optionText, nationality === n && styles.optionTextSelected]}>
-                  {n}
-                </Text>
-                {nationality === n && <Text style={styles.check}>✓</Text>}
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
+      <View style={styles.sectionCard}>
+        <SectionHeader
+          eyebrow="Identity"
+          title="Tell TripGuard who is arriving."
+          detail="Nationality determines the first layer of license and visa guidance."
+        />
+        <ScrollView style={styles.optionScroll} keyboardShouldPersistTaps="handled">
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search nationality"
+            value={search}
+            onChangeText={setSearch}
+            placeholderTextColor="#8A7E70"
+          />
+          {filtered.map((n) => (
+            <TouchableOpacity
+              key={n}
+              style={[styles.option, nationality === n && styles.optionSelected]}
+              onPress={() => setNationality(n)}
+            >
+              <Text style={[styles.optionText, nationality === n && styles.optionTextSelected]}>
+                {n}
+              </Text>
+              {nationality === n && <Text style={styles.check}>Selected</Text>}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
-        {step === 1 && idpInfo && (
-          <View>
-            <Text style={styles.stepTitle}>Your Driving Status</Text>
-            <View style={[styles.infoCard, idpInfo.valid ? styles.cardGreen : styles.cardRed]}>
-              <Text style={styles.cardEmoji}>{idpInfo.valid ? "✅" : "❌"}</Text>
-              <Text style={styles.cardTitle}>{idpInfo.convention}</Text>
-              <Text style={styles.cardNote}>{idpInfo.note}</Text>
+      <View style={styles.sectionCard}>
+        <SectionHeader
+          eyebrow="Legal posture"
+          title="Review the profile TripGuard will protect."
+          detail="This is a briefing layer, not the final legal answer."
+        />
+        {!nationality ? (
+          <Text style={styles.emptyNote}>Select a nationality to unlock the first legal briefing.</Text>
+        ) : (
+          <View style={styles.signalStack}>
+            <View style={[styles.signalCard, idpInfo?.valid ? styles.signalSafe : styles.signalDanger]}>
+              <Text style={styles.signalLabel}>Driving status</Text>
+              <Text style={styles.signalTitle}>{idpInfo?.convention}</Text>
+              <Text style={styles.signalBody}>{idpInfo?.note}</Text>
             </View>
-            <View style={styles.infoCard}>
-              <Text style={styles.cardEmoji}>🛂</Text>
-              <Text style={styles.cardTitle}>Visa-Free Stay</Text>
-              <Text style={styles.cardNote}>
+
+            <View style={styles.signalCard}>
+              <Text style={styles.signalLabel}>Entry posture</Text>
+              <Text style={styles.signalTitle}>
+                {visaFreeDays > 0 ? `${visaFreeDays} day window` : "Visa required"}
+              </Text>
+              <Text style={styles.signalBody}>
                 {visaFreeDays > 0
-                  ? `${visaFreeDays} days visa-free for ${nationality} citizens`
-                  : `No visa-free entry — e-visa required`}
+                  ? `${nationality} travelers currently qualify for visa-free entry.`
+                  : `${nationality} travelers should prepare visa handling before departure.`}
               </Text>
             </View>
-          </View>
-        )}
 
-        {step === 2 && (
-          <View>
-            <Text style={styles.stepTitle}>Do you have a drone?</Text>
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Traveling with a drone</Text>
-              <Switch
-                value={hasDrone}
-                onValueChange={setHasDrone}
-                trackColor={{ false: "#E5E7EB", true: "#14B8A6" }}
-                thumbColor="#fff"
-              />
-            </View>
-            {hasDrone && (
-              <View style={{ marginTop: 16 }}>
-                <Text style={styles.droneLabel}>Select your drone model:</Text>
-                {DRONE_MODELS.map((model) => {
-                  const info = DRONE_WEIGHTS[model];
-                  return (
-                    <TouchableOpacity
-                      key={model}
-                      style={[styles.option, droneModel === model && styles.optionSelected]}
-                      onPress={() => setDroneModel(model)}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.optionText, droneModel === model && styles.optionTextSelected]}>
-                          {model}
-                        </Text>
-                        <Text style={styles.droneNote}>{info.note}</Text>
-                      </View>
-                      {droneModel === model && <Text style={styles.check}>✓</Text>}
-                    </TouchableOpacity>
-                  );
-                })}
+            <View style={styles.droneRow}>
+              <View style={styles.switchRow}>
+                <Text style={styles.switchTitle}>Traveling with a drone</Text>
+                <Switch
+                  value={hasDrone}
+                  onValueChange={setHasDrone}
+                  trackColor={{ false: "#D9D0C3", true: "#C7D5FF" }}
+                  thumbColor={hasDrone ? mobileTheme.colors.primary : "#FFFFFF"}
+                />
               </View>
-            )}
+              {hasDrone && (
+                <View style={styles.droneList}>
+                  {DRONE_MODELS.map((model) => {
+                    const info = DRONE_WEIGHTS[model];
+                    return (
+                      <TouchableOpacity
+                        key={model}
+                        style={[styles.option, droneModel === model && styles.optionSelected]}
+                        onPress={() => setDroneModel(model)}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.optionText, droneModel === model && styles.optionTextSelected]}>
+                            {model}
+                          </Text>
+                          <Text style={styles.droneNote}>{info.note}</Text>
+                        </View>
+                        {droneModel === model && <Text style={styles.check}>Selected</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
           </View>
         )}
-      </ScrollView>
+      </View>
 
-      {/* Bottom actions */}
-      <View style={styles.footer}>
-        {step > 0 && (
-          <TouchableOpacity style={styles.backBtn} onPress={() => setStep(step - 1)}>
-            <Text style={styles.backBtnText}>Back</Text>
-          </TouchableOpacity>
-        )}
+      <View style={[styles.sectionCard, styles.accessCard]}>
+        <SectionHeader
+          eyebrow="Protected mode"
+          title="Enter through a deliberate access gate."
+          detail="This is not a decorative CTA. Holding the control confirms you want TripGuard to operate in protected mode."
+        />
+
         <TouchableOpacity
-          style={[
-            styles.nextBtn,
-            step === 0 && !nationality && styles.nextBtnDisabled,
-          ]}
-          disabled={step === 0 && !nationality}
-          onPress={() => {
-            if (step < 2) setStep(step + 1);
-            else handleFinish();
-          }}
+          activeOpacity={0.92}
+          style={[styles.revealPanel, accessFlow === "revealing" && styles.revealPanelActive]}
+          onPress={() => setAccessFlow("revealing")}
         >
-          <Text style={styles.nextBtnText}>
-            {step === 2 ? "Start TripGuard" : "Continue"}
+          <Text style={styles.revealTitle}>
+            {accessFlow === "sealed" ? "Reveal protected access" : "Protected access ready"}
+          </Text>
+          <Text style={styles.revealBody}>
+            {accessFlow === "sealed"
+              ? "Open the gate when the profile looks correct."
+              : "Hold to confirm. This stores your trust tier locally and takes you into the app."}
+          </Text>
+        </TouchableOpacity>
+
+        {accessFlow === "revealing" && (
+          <HoldToConfirm
+            label="Hold to enter protected mode"
+            hint={nationality ? "Press and hold for a deliberate entry." : "Select nationality before protected mode is available."}
+            disabled={!nationality}
+            onConfirm={() => setAccessFlow("granted")}
+          />
+        )}
+
+        <TouchableOpacity
+          style={styles.secondaryLink}
+          disabled={!nationality}
+          onPress={() => handleFinish("observer")}
+        >
+          <Text style={[styles.secondaryLinkText, !nationality && styles.secondaryLinkDisabled]}>
+            Continue with standard access
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </ScreenSurface>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFB" },
-  header: {
-    backgroundColor: "#14B8A6",
-    padding: 24,
-    paddingTop: 40,
-    alignItems: "center",
+  heroCard: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+    borderRadius: 28,
+    padding: 20,
+    gap: 10,
   },
-  logoRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
-  logo: { fontSize: 28 },
-  logoText: { fontSize: 24, fontWeight: "800", color: "#fff" },
-  subtitle: { fontSize: 14, color: "#CCFBF1", marginBottom: 16 },
-  stepIndicator: { flexDirection: "row", gap: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.4)" },
-  dotActive: { backgroundColor: "#fff" },
-  body: { flex: 1, padding: 20 },
-  stepTitle: { fontSize: 20, fontWeight: "700", color: "#1F2937", marginBottom: 16 },
-  searchInput: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
+  heroLine: {
+    width: 64,
+    height: 1,
+    backgroundColor: "rgba(248, 244, 236, 0.3)",
+  },
+  heroEyebrow: {
+    color: "#E7C79B",
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.9,
+  },
+  heroTitle: {
+    color: mobileTheme.colors.textOnDark,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: "700",
+  },
+  heroBody: {
+    color: "rgba(248, 244, 236, 0.78)",
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  sectionCard: {
+    backgroundColor: mobileTheme.colors.surface,
+    borderRadius: 24,
+    padding: 18,
+    gap: 16,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: mobileTheme.colors.line,
+  },
+  accessCard: {
+    marginBottom: 24,
+  },
+  optionScroll: {
+    maxHeight: 260,
+  },
+  searchInput: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 16,
+    padding: 14,
+    fontSize: 15,
+    borderColor: mobileTheme.colors.line,
+    borderWidth: 1,
     marginBottom: 12,
-    color: "#1F2937",
+    color: mobileTheme.colors.textPrimary,
   },
   option: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
+    backgroundColor: mobileTheme.colors.surface,
+    borderRadius: 16,
     padding: 14,
     marginBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: mobileTheme.colors.line,
   },
-  optionSelected: { borderColor: "#14B8A6", backgroundColor: "#F0FDFA" },
-  optionText: { flex: 1, fontSize: 15, color: "#374151" },
-  optionTextSelected: { color: "#0F766E", fontWeight: "600" },
-  check: { color: "#14B8A6", fontSize: 16, fontWeight: "700" },
-  infoCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
+  optionSelected: {
+    borderColor: mobileTheme.colors.primary,
+    backgroundColor: mobileTheme.colors.primarySoft,
   },
-  cardGreen: { borderColor: "#6EE7B7", backgroundColor: "#F0FDF4" },
-  cardRed: { borderColor: "#FCA5A5", backgroundColor: "#FFF5F5" },
-  cardEmoji: { fontSize: 28, marginBottom: 8 },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: "#1F2937", marginBottom: 4 },
-  cardNote: { fontSize: 14, color: "#6B7280", textAlign: "center" },
-  switchRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  switchLabel: { fontSize: 16, color: "#1F2937", fontWeight: "500" },
-  droneLabel: { fontSize: 15, fontWeight: "600", color: "#374151", marginBottom: 8 },
-  droneNote: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-  footer: {
-    flexDirection: "row",
-    padding: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#fff",
-  },
-  backBtn: {
+  optionText: {
     flex: 1,
+    fontSize: 15,
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+  },
+  optionTextSelected: {
+    color: mobileTheme.colors.primary,
+    fontWeight: "700",
+  },
+  check: {
+    color: mobileTheme.colors.primary,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  signalStack: {
+    gap: 12,
+  },
+  signalCard: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 18,
     padding: 16,
-    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
+    borderColor: mobileTheme.colors.line,
+    gap: 6,
   },
-  backBtnText: { fontSize: 16, fontWeight: "600", color: "#6B7280" },
-  nextBtn: {
-    flex: 2,
-    backgroundColor: "#14B8A6",
+  signalSafe: {
+    backgroundColor: mobileTheme.colors.successSoft,
+    borderColor: "rgba(31, 107, 87, 0.18)",
+  },
+  signalDanger: {
+    backgroundColor: mobileTheme.colors.dangerSoft,
+    borderColor: "rgba(161, 46, 46, 0.18)",
+  },
+  signalLabel: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  signalTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  signalBody: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  emptyNote: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  droneRow: {
+    gap: 12,
+  },
+  switchRow: {
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderRadius: 18,
     padding: 16,
-    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
   },
-  nextBtnDisabled: { backgroundColor: "#9CA3AF" },
-  nextBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+  switchTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  droneList: {
+    gap: 8,
+  },
+  droneNote: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  revealPanel: {
+    borderRadius: 20,
+    padding: 18,
+    backgroundColor: mobileTheme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    gap: 6,
+  },
+  revealPanelActive: {
+    borderColor: mobileTheme.colors.gold,
+    backgroundColor: mobileTheme.colors.goldSoft,
+  },
+  revealTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  revealBody: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  secondaryLink: {
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  secondaryLinkText: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  secondaryLinkDisabled: {
+    color: "#A49787",
+  },
 });

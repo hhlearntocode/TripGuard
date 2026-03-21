@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { TrustTier } from "@/features/flows";
 
 const PROFILE_KEY = "tripguard_user_profile";
 
@@ -8,6 +9,7 @@ export interface UserProfile {
   visa_free_days: number;
   has_drone: boolean;
   drone_model: string;
+  trust_tier: TrustTier;
 }
 
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
@@ -17,7 +19,15 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 export async function loadUserProfile(): Promise<UserProfile | null> {
   const raw = await AsyncStorage.getItem(PROFILE_KEY);
   if (!raw) return null;
-  return JSON.parse(raw) as UserProfile;
+  const parsed = JSON.parse(raw) as Partial<UserProfile>;
+  return {
+    nationality: parsed.nationality || "",
+    idp_type: parsed.idp_type || "None",
+    visa_free_days: parsed.visa_free_days || 0,
+    has_drone: !!parsed.has_drone,
+    drone_model: parsed.drone_model || "None",
+    trust_tier: parsed.trust_tier || "observer",
+  };
 }
 
 export async function clearUserProfile(): Promise<void> {
