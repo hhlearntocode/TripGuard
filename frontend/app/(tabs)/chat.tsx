@@ -71,94 +71,149 @@ type MessageOrigin = "typed" | "voice";
 function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
   const urlSources = (sources ?? []).filter((s) => s.startsWith("http"));
   return (
-    <View style={answerStyles.markdownWrap}>
-      <Markdown
-        style={markdownStyles}
-        onLinkPress={(url) => {
-          void Linking.openURL(url);
-          return false;
-        }}
-      >
-        {text}
-      </Markdown>
-      {urlSources.length > 0 && (
-        <View style={answerStyles.sourceRow}>
-          <Text style={answerStyles.sourceRef}>
-            <Text style={answerStyles.sourceLabel}>Sources</Text>
+    <View style={{ gap: 0 }}>
+      {lines.map((line, i) => {
+        const isSourceLine = /^Source:/i.test(line.trim());
+        if (isSourceLine) {
+          const ref = line.replace(/^Source:\s*/i, "").trim();
+          return (
+            <View key={i} style={answerStyles.sourceRow}>
+              <Text style={answerStyles.sourceRef}>
+                <Text style={answerStyles.sourceLabel}>Source: </Text>
+                {ref}
+              </Text>
+              {urlSources.length > 0 && (
+                <View style={answerStyles.chips}>
+                  {urlSources.slice(0, 3).map((url, j) => {
+                    const domain = url.replace(/^https?:\/\//, "").split("/")[0];
+                    return (
+                      <TouchableOpacity
+                        key={j}
+                        style={answerStyles.chip}
+                        onPress={() => Linking.openURL(url)}
+                      >
+                        <Text style={answerStyles.chipText} numberOfLines={1}>{domain}</Text>
+                        <Ionicons name="open-outline" size={10} color={mobileTheme.colors.primary} />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          );
+        }
+        return (
+          <Text key={i} style={answerStyles.line}>
+            {line}
           </Text>
-          <View style={answerStyles.chips}>
-            {urlSources.slice(0, 3).map((url, j) => {
-              const domain = url.replace(/^https?:\/\//, "").split("/")[0];
-              return (
-                <TouchableOpacity
-                  key={j}
-                  style={answerStyles.chip}
-                  onPress={() => Linking.openURL(url)}
-                >
-                  <Text style={answerStyles.chipText} numberOfLines={1}>{domain}</Text>
-                  <Ionicons name="open-outline" size={10} color={mobileTheme.colors.primary} />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
+        );
+      })}
     </View>
   );
 }
 
-function AssessmentText({ text }: { text: string }) {
-  return (
-    <Markdown
-      style={assessmentMarkdownStyles}
-      onLinkPress={(url) => {
-        void Linking.openURL(url);
-        return false;
-      }}
-    >
-      {text}
-    </Markdown>
-  );
-}
-
 const answerStyles = StyleSheet.create({
-  markdownWrap: {
-    gap: 8,
+  line: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    color: mobileTheme.colors.textPrimary,
+    lineHeight: 21,
   },
   sourceRow: {
+    marginTop: 6,
     gap: 6,
+    paddingVertical: 3,
   },
-  sourceRef: {
+  refDomain: {
     fontFamily: mobileTheme.fonts.body,
     fontSize: 12,
-    color: mobileTheme.colors.textSecondary,
-    lineHeight: 18,
+    fontWeight: "600",
+    color: mobileTheme.colors.primary,
   },
-  sourceLabel: {
+  refPath: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    color: mobileTheme.colors.textSecondary,
+  },
+});
+
+const markdownStyles = StyleSheet.create({
+  body: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 8,
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  heading1: {
+    marginTop: 8,
+    marginBottom: 6,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+  },
+  heading2: {
+    marginTop: 8,
+    marginBottom: 6,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+  },
+  heading3: {
+    marginTop: 8,
+    marginBottom: 4,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+  },
+  bullet_list: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  ordered_list: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  list_item: {
+    marginBottom: 4,
+  },
+  strong: {
     fontWeight: "700",
     color: mobileTheme.colors.textPrimary,
   },
-  chips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
+  em: {
+    fontStyle: "italic",
   },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: mobileTheme.colors.primarySoft,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: "rgba(99,102,241,0.18)",
-  },
-  chipText: {
+  code_inline: {
+    backgroundColor: mobileTheme.colors.surface,
+    color: mobileTheme.colors.textPrimary,
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
     fontFamily: mobileTheme.fonts.body,
-    fontSize: 11,
+  },
+  link: {
     color: mobileTheme.colors.primary,
-    maxWidth: 180,
+    textDecorationLine: "underline",
+  },
+  blockquote: {
+    borderLeftWidth: 3,
+    borderLeftColor: mobileTheme.colors.line,
+    paddingLeft: 10,
+    opacity: 0.95,
   },
 });
 
@@ -610,16 +665,22 @@ export default function ChatScreen() {
         attachments.map(async (a, i) => {
           if (!a.base64) return `- Image ${i + 1}: attached (analysis unavailable).`;
           try {
-            const visionResp = await fetch(`${API_URL}/api/vision`, {
+            const visionResp = await fetch(`${API_URL}/api/vision/analyze`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ image_b64: a.base64 }),
             });
-            const sign = await visionResp.json();
-            if (sign?.code) {
-              return `[Traffic sign in photo: ${sign.code} — "${sign.name}" — category:${sign.category ?? "unknown"}]`;
+            const result = await visionResp.json();
+
+            if (result?.type === "sign" && result.code) {
+              return `[Traffic sign in photo: ${result.code} — "${result.name}" — category:${result.category ?? "unknown"}]`;
             }
-            return `- Image ${i + 1}: not recognized as a Vietnamese traffic sign.`;
+
+            if (result?.type === "object" && result.description) {
+              return `[Image content: ${result.description}${result.law_relevance ? ` — domain:${result.law_relevance}` : ""}]`;
+            }
+
+            return `- Image ${i + 1}: could not identify content.`;
           } catch {
             return `- Image ${i + 1}: could not analyze image.`;
           }
