@@ -1,7 +1,3 @@
-export type TrustTier = "observer" | "protected";
-
-export type AccessFlowState = "sealed" | "revealing" | "granted";
-
 export type LegalityUiState =
   | "uncertain"
   | "checking"

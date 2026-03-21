@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { EMERGENCY_SCRIPTS } from "@/constants/emergency";
 import ScreenSurface from "@/components/ui/ScreenSurface";
+import AppDashboardMenu from "@/components/ui/AppDashboardMenu";
 import SectionHeader from "@/components/ui/SectionHeader";
 import { mobileTheme } from "@/theme/mobileTheme";
 
@@ -27,6 +28,7 @@ export default function EmergencyScreen() {
     <ScreenSurface
       title="Emergency Response"
       subtitle="Designed for moments when the user is stressed and time is already being lost."
+      leftNode={<AppDashboardMenu />}
       scrollable={false}
     >
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.screenContent}>

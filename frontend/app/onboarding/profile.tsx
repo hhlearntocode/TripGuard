@@ -15,8 +15,6 @@ import { saveUserProfile } from "@/hooks/useUserProfile";
 import { NATIONALITIES, getIdpStatus, getVisaFreeDays, DRONE_WEIGHTS } from "@/constants/legal";
 import ScreenSurface from "@/components/ui/ScreenSurface";
 import SectionHeader from "@/components/ui/SectionHeader";
-import HoldToConfirm from "@/components/ui/HoldToConfirm";
-import { AccessFlowState } from "@/features/flows";
 import { mobileTheme } from "@/theme/mobileTheme";
 
 const DRONE_MODELS = Object.keys(DRONE_WEIGHTS);
@@ -27,7 +25,6 @@ export default function ProfileScreen() {
   const [search, setSearch] = useState("");
   const [hasDrone, setHasDrone] = useState(false);
   const [droneModel, setDroneModel] = useState("DJI Mini 4 Pro");
-  const [accessFlow, setAccessFlow] = useState<AccessFlowState>("sealed");
   const [showRequiredHints, setShowRequiredHints] = useState(false);
   const identityWiggle = useRef(new Animated.Value(0)).current;
 
@@ -81,25 +78,16 @@ export default function ProfileScreen() {
     ]).start();
   }
 
-  async function handleObserverContinue() {
+  async function handleContinue() {
     if (!nationality) {
       setShowRequiredHints(true);
       triggerIdentityShake();
       return;
     }
-    await handleFinish("observer");
+    await handleFinish();
   }
 
-  function handleProtectedReveal() {
-    if (!nationality) {
-      setShowRequiredHints(true);
-      triggerIdentityShake();
-      return;
-    }
-    setAccessFlow("revealing");
-  }
-
-  async function handleFinish(trustTier: "observer" | "protected") {
+  async function handleFinish() {
     const idp = idpInfo;
     let idpType = "None";
     if (idp) {
@@ -115,15 +103,9 @@ export default function ProfileScreen() {
       visa_free_days: visaFreeDays,
       has_drone: hasDrone,
       drone_model: hasDrone ? droneModel : "None",
-      trust_tier: trustTier,
     });
-    router.replace("/(tabs)/checklist");
+    router.replace("/(tabs)/chat");
   }
-
-  useEffect(() => {
-    if (accessFlow !== "granted") return;
-    handleFinish("protected");
-  }, [accessFlow]);
 
   useEffect(() => {
     if (nationality) setShowRequiredHints(false);
@@ -131,7 +113,7 @@ export default function ProfileScreen() {
 
   return (
     <ScreenSurface
-      title="Protected Access Intake"
+      title="Travel Intake"
       subtitle="Establish the minimum profile needed to reduce ambiguity before you travel."
     >
       <View style={styles.heroCard}>
@@ -249,42 +231,18 @@ export default function ProfileScreen() {
 
       <View style={[styles.sectionCard, styles.accessCard]}>
         <SectionHeader
-          eyebrow="Protected mode"
-          title="Enter through a deliberate access gate."
-          detail="This is not a decorative CTA. Holding the control confirms you want TripGuard to operate in protected mode."
+          eyebrow="Access"
+          title="Continue into TripGuard"
+          detail="Confirm your profile details before you continue."
         />
-
         <TouchableOpacity
           activeOpacity={0.92}
-          style={[
-            styles.revealPanel,
-            accessFlow === "revealing" && styles.revealPanelActive,
-            missingNationality && styles.revealPanelRequired,
-          ]}
-          onPress={handleProtectedReveal}
+          style={[styles.revealPanel, missingNationality && styles.revealPanelRequired]}
+          onPress={() => void handleContinue()}
         >
-          <Text style={styles.revealTitle}>
-            {accessFlow === "sealed" ? "Reveal protected access" : "Protected access ready"}
-          </Text>
+          <Text style={styles.revealTitle}>Continue</Text>
           <Text style={[styles.revealBody, missingNationality && styles.revealBodyRequired]}>
-            {accessFlow === "sealed"
-              ? "Open the gate when the profile looks correct."
-              : "Hold to confirm. This stores your trust tier locally and takes you into the app."}
-          </Text>
-        </TouchableOpacity>
-
-        {accessFlow === "revealing" && (
-          <HoldToConfirm
-            label="Hold to enter protected mode"
-            hint={nationality ? "Press and hold for a deliberate entry." : "Select nationality before protected mode is available."}
-            disabled={!nationality}
-            onConfirm={() => setAccessFlow("granted")}
-          />
-        )}
-
-        <TouchableOpacity style={styles.secondaryLink} onPress={() => void handleObserverContinue()}>
-          <Text style={[styles.secondaryLinkText, missingNationality && styles.secondaryLinkWarning]}>
-            Continue with standard access
+            Save your intake profile and proceed to the main app.
           </Text>
         </TouchableOpacity>
       </View>

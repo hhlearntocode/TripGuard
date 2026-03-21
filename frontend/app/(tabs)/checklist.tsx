@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
 import { getIdpStatus, getVisaFreeDays, DRONE_WEIGHTS } from "@/constants/legal";
 import ScreenSurface from "@/components/ui/ScreenSurface";
+import AppDashboardMenu from "@/components/ui/AppDashboardMenu";
 import SectionHeader from "@/components/ui/SectionHeader";
 import StatusPill from "@/components/ui/StatusPill";
 import { mobileTheme } from "@/theme/mobileTheme";
@@ -113,11 +114,12 @@ export default function BriefingScreen() {
       <ScreenSurface
         title="Travel Briefing"
         subtitle="TripGuard needs a profile before it can establish a legal posture."
+        leftNode={<AppDashboardMenu />}
         scrollable={false}
       >
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Profile required</Text>
-          <Text style={styles.emptyBody}>Set up protected access to unlock your travel briefing.</Text>
+          <Text style={styles.emptyBody}>Set up your intake profile to unlock your travel briefing.</Text>
           <TouchableOpacity style={styles.primaryButton} onPress={() => router.push("/onboarding/profile")}>
             <Text style={styles.primaryButtonText}>Open intake</Text>
           </TouchableOpacity>
@@ -136,12 +138,11 @@ export default function BriefingScreen() {
     <ScreenSurface
       title="Travel Briefing"
       subtitle="Orient yourself before you ask a specific legal question."
+      leftNode={<AppDashboardMenu />}
       rightNode={<StatusPill state={readinessState} />}
     >
       <View style={styles.heroCard}>
-        <Text style={styles.heroEyebrow}>
-          {profile.trust_tier === "protected" ? "Protected system active" : "Standard mode"}
-        </Text>
+        <Text style={styles.heroEyebrow}>Trip posture overview</Text>
         <Text style={styles.heroTitle}>
           {errors > 0
             ? "There are immediate legal exposures in your travel profile."

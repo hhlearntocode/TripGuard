@@ -14,7 +14,9 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
+import { appendChatHistory, ChatHistoryEntry } from "@/hooks/useChatHistory";
 import ScreenSurface from "@/components/ui/ScreenSurface";
+import AppDashboardMenu from "@/components/ui/AppDashboardMenu";
 import SectionHeader from "@/components/ui/SectionHeader";
 import StatusPill from "@/components/ui/StatusPill";
 import { deriveLegalityState, getLegalityTone, LegalityUiState } from "@/features/flows";
@@ -56,6 +58,16 @@ export default function ChatScreen() {
     setInput(params.query);
   }, [params.query]);
 
+  const persistHistory = async (query: string, answer: string) => {
+    const entry: ChatHistoryEntry = {
+      id: Date.now().toString(),
+      query,
+      preview: answer.replace(/\s+/g, " ").trim().slice(0, 120),
+      created_at: new Date().toISOString(),
+    };
+    await appendChatHistory(entry);
+  };
+
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading || !profile) return;
 
@@ -87,14 +99,17 @@ export default function ChatScreen() {
         state: nextState,
       };
       setMessages((prev) => [nextMessage, ...prev]);
+      await persistHistory(text, data.answer || "");
       setUiState(nextState);
     } catch (e) {
+      const fallback = "TripGuard could not verify the scenario right now. Check your connection and retry.";
       setMessages((prev) => [{
         id: `err-${Date.now().toString()}`,
         query: text,
-        content: "TripGuard could not verify the scenario right now. Check your connection and retry.",
+        content: fallback,
         state: "warning",
       }, ...prev]);
+      await persistHistory(text, fallback);
       setUiState("warning");
     } finally {
       setIsLoading(false);
@@ -140,6 +155,7 @@ export default function ChatScreen() {
     <ScreenSurface
       title="Legality Check"
       subtitle={getLegalityTone(uiState)}
+      leftNode={<AppDashboardMenu />}
       rightNode={<StatusPill state={isLoading ? "checking" : uiState} />}
       scrollable={false}
     >

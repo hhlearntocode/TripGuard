@@ -1,5 +1,4 @@
 import json
-import os
 
 SYSTEM_PROMPT = """You are TripGuard, a legal information assistant for foreign tourists in Vietnam.
 

@@ -12,6 +12,7 @@ interface ScreenSurfaceProps {
   title: string;
   subtitle: string;
   children: ReactNode;
+  leftNode?: ReactNode;
   rightNode?: ReactNode;
   scrollable?: boolean;
 }
@@ -20,6 +21,7 @@ export default function ScreenSurface({
   title,
   subtitle,
   children,
+  leftNode,
   rightNode,
   scrollable = true,
 }: ScreenSurfaceProps) {
@@ -31,11 +33,14 @@ export default function ScreenSurface({
       </View>
 
       <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
+        <View style={styles.headerSide}>{leftNode}</View>
+        <View style={styles.headerCopyWrap}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.subtitle}>{subtitle}</Text>
+          </View>
         </View>
-        {rightNode}
+        <View style={[styles.headerSide, styles.headerSideRight]}>{rightNode}</View>
       </View>
 
       {scrollable ? (
@@ -83,13 +88,22 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 14,
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
+    alignItems: "center",
     gap: 12,
   },
-  headerCopy: {
+  headerCopyWrap: {
     flex: 1,
+  },
+  headerCopy: {
     gap: 6,
+  },
+  headerSide: {
+    minWidth: 34,
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+  headerSideRight: {
+    alignItems: "flex-end",
   },
   title: {
     color: mobileTheme.colors.textPrimary,
