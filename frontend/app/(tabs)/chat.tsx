@@ -414,6 +414,10 @@ export default function ChatScreen() {
   const [isProcessingVoiceInput, setIsProcessingVoiceInput] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [isQuickTrayHovered, setIsQuickTrayHovered] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const userCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const locationStatus = useRef<"pending" | "ready" | "denied">("pending");
+  const locationResolvers = useRef<Array<() => void>>([]);
   const conversationScrollRef = useRef<ScrollView | null>(null);
   const draftBeforeRecordingRef = useRef("");
 
@@ -467,6 +471,31 @@ export default function ChatScreen() {
 
   useEffect(() => {
     loadUserProfile().then(setProfile);
+  }, []);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      locationStatus.current = "denied";
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        userCoordsRef.current = coords;
+        locationStatus.current = "ready";
+        setUserCoords(coords);
+        // Unblock any sendMessage calls waiting for location
+        locationResolvers.current.forEach((resolve) => resolve());
+        locationResolvers.current = [];
+      },
+      () => {
+        locationStatus.current = "denied";
+        locationResolvers.current.forEach((resolve) => resolve());
+        locationResolvers.current = [];
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   }, []);
 
   useEffect(() => {
@@ -656,6 +685,14 @@ export default function ChatScreen() {
       await updateChatThreadTitle(threadId, query);
     }
 
+    // Wait up to 3s for GPS if still resolving
+    if (locationStatus.current === "pending") {
+      await Promise.race([
+        new Promise<void>((resolve) => { locationResolvers.current.push(resolve); }),
+        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    }
+
     const TOOL_LABELS: Record<string, string> = {
       retrieve_law: "Retrieving ...",
       web_search: "Searching ...",
@@ -670,6 +707,8 @@ export default function ChatScreen() {
           message: query,
           user_profile: profile,
           conversation_history: history,
+          lat: userCoordsRef.current?.lat ?? null,
+          lng: userCoordsRef.current?.lng ?? null,
         }),
       });
 
@@ -1121,6 +1160,18 @@ export default function ChatScreen() {
           )}
 
           <View style={styles.composerDock}>
+            <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 4 }}>
+              <Ionicons
+                name={userCoords ? "location" : "location-outline"}
+                size={11}
+                color={userCoords ? mobileTheme.colors.primary : mobileTheme.colors.textSecondary}
+              />
+              <Text style={{ fontSize: 11, color: mobileTheme.colors.textSecondary, marginLeft: 3 }}>
+                {userCoords
+                  ? `${userCoords.lat.toFixed(4)}, ${userCoords.lng.toFixed(4)}`
+                  : "Getting location..."}
+              </Text>
+            </View>
             <View
               style={styles.composerCard}
               onLayout={(event) => {

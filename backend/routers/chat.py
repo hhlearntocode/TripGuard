@@ -13,6 +13,8 @@ class ChatRequest(BaseModel):
     message: str
     user_profile: dict
     conversation_history: list[dict] = []
+    lat: float | None = None
+    lng: float | None = None
 
 
 class VisionRequest(BaseModel):
@@ -25,6 +27,8 @@ async def chat(req: ChatRequest):
         user_message=req.message,
         user_profile=req.user_profile,
         conversation_history=req.conversation_history,
+        lat=req.lat,
+        lng=req.lng,
     )
     return {
         "answer": result["answer"],
@@ -43,6 +47,8 @@ async def chat_stream(req: ChatRequest):
                 user_message=req.message,
                 user_profile=req.user_profile,
                 conversation_history=req.conversation_history,
+                lat=req.lat,
+                lng=req.lng,
                 on_event=lambda e: queue.put_nowait(e),
             )
             await queue.put({"type": "done", "answer": result["answer"], "sources": result["sources"]})

@@ -1,6 +1,7 @@
 from backend.services.rag_service import retrieve
 from backend.services.web_search_service import web_search as _web_search
 from backend.services.tinyfish_service import tinyfish_scrape
+from backend.services.foursquare_service import get_nearby_places as _get_nearby_places
 from backend.data.constants import FINES, EMBASSY_CONTACTS, lookup_fine as _lookup_fine
 from backend.data.emergency import EMERGENCY_SCRIPTS
 
@@ -96,6 +97,31 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "get_nearby_places",
+            "description": (
+                "Get tourist spots, landmarks, and points of interest near the user's current location. "
+                "Use when user asks: 'where should I go', 'what to do nearby', 'attractions near me', "
+                "'what's around here', or any recommendation/exploration question. "
+                "Returns real place names, categories, and distances."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "default": 5,
+                        "minimum": 1,
+                        "maximum": 10,
+                        "description": "Number of places to return"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "scrape_url",
             "description": (
                 "Scrape specific URL to extract legal content. "
@@ -143,6 +169,17 @@ def execute_tool(name: str, args: dict) -> str:
         embassy = EMBASSY_CONTACTS.get(args.get("nationality", ""), "Contact your country's embassy in Hanoi")
         hotlines = script.get("hotlines", {})
         return f"{script['title']}\n{steps}\nHotlines: {hotlines}\nEmbassy: {embassy}"
+
+    elif name == "get_nearby_places":
+        lat = args.get("_lat")
+        lng = args.get("_lng")
+        if lat is None or lng is None:
+            return "Location not available — user has not shared GPS coordinates."
+        places = _get_nearby_places(lat, lng, limit=args.get("limit", 5))
+        if not places:
+            return "No nearby places found (Foursquare returned no results)."
+        lines = [f"- {p['name']} ({p['category']}, {p['distance_m']}m away) — {p['address']}" for p in places]
+        return "Nearby places:\n" + "\n".join(lines)
 
     elif name == "web_search":
         return _web_search(args["query"], args.get("max_results", 5))

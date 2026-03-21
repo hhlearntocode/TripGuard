@@ -8,3 +8,4 @@ rag/
 venv*/
 node_modules/
 frontend/.expo/
+deploy_tutor.md

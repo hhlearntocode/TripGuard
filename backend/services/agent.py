@@ -15,6 +15,7 @@ USER PROFILE
 - IDP convention: {idp_type}
 - Visa-free days: {visa_free_days}
 - Has drone:      {has_drone} ({drone_model})
+- Current location: {user_location}
 
 ═══════════════════════════════════════
 VIETNAM LAW QUICK REFERENCE (authoritative — use these exact numbers)
@@ -126,6 +127,13 @@ STEP 7 — Image content (when message contains "[Image content:"):
   The image has been identified (e.g. "a vape device", "cannabis", "a drone").
   Use the identified object and its law_relevance domain to guide retrieve_law() and web_search().
   Treat the identified object as the subject of the user's question.
+
+STEP 8 — Location-aware questions (recommendations, exploration, "what to pay attention"):
+  When user asks about: where to go, nearby attractions, what to visit, what to pay attention to
+  in the current area, or any question that benefits from knowing their location:
+  → Call get_nearby_places() to get real spots near them.
+  → Call retrieve_law() with the area name to surface local legal reminders.
+  → Combine both to give specific, actionable advice for their exact location.
 
 ═══════════════════════════════════════
 STRICT OUTPUT RULES
@@ -351,18 +359,30 @@ async def _presearch_sign(
     )
 
 
+def _location_context(lat: float | None, lng: float | None) -> str:
+    """Return a location string to inject into the system prompt."""
+    if lat is None or lng is None:
+        return "unknown (user has not shared location)"
+    from backend.services.briefing_service import _reverse_geocode_approx
+    area = _reverse_geocode_approx(lat, lng)
+    return f"{area} (GPS: {lat:.4f}, {lng:.4f})"
+
+
 async def run_agent(
     user_message: str,
     user_profile: dict,
     conversation_history: list[dict] = None,
     max_steps: int = 5,
     on_event=None,
+    lat: float | None = None,
+    lng: float | None = None,
 ) -> dict:
     from backend.services.llm_adapter import get_adapter
     from backend.services.tool_registry import TOOL_SCHEMAS, execute_tool
 
     llm = get_adapter()
-    formatted_prompt = SYSTEM_PROMPT.format(**user_profile)
+    location_str = _location_context(lat, lng)
+    formatted_prompt = SYSTEM_PROMPT.format(**user_profile, user_location=location_str)
     steps_log, tools_used, sources = [], [], []
 
     # Pre-search: if message contains an identified traffic sign, fetch web data before the LLM loop
@@ -420,8 +440,15 @@ async def run_agent(
 
         # Run all tools in parallel — significant speedup when LLM calls multiple tools at once
         # (e.g. retrieve_law for traffic + retrieve_law for drone in a single step)
+        def _args_with_location(tc):
+            args = dict(tc["arguments"])
+            if tc["name"] == "get_nearby_places":
+                args["_lat"] = lat
+                args["_lng"] = lng
+            return args
+
         results = await asyncio.gather(*[
-            asyncio.to_thread(execute_tool, tc["name"], tc["arguments"])
+            asyncio.to_thread(execute_tool, tc["name"], _args_with_location(tc))
             for tc in response["tool_calls"]
         ])
 

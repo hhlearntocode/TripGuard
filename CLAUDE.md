@@ -54,7 +54,8 @@ tripguard/
 ├── backend/
 │   ├── main.py
 │   ├── routers/
-│   │   └── chat.py
+│   │   ├── chat.py
+│   │   └── location.py           # POST /api/location — daily briefing trigger
 │   ├── services/
 │   │   ├── agent.py              # ReAct loop — main entry point
 │   │   ├── tool_registry.py      # Tool schemas + execute_tool()
@@ -62,18 +63,26 @@ tripguard/
 │   │   ├── rag_service.py        # ChromaDB retrieval — BAAI/bge-m3
 │   │   ├── web_search_service.py # Tavily search
 │   │   ├── tinyfish_service.py   # TinyFish scrape
-│   │   └── vision_service.py     # Sign identification
+│   │   ├── vision_service.py     # Sign identification
+│   │   ├── location_service.py   # Haversine distance + SQLite location history
+│   │   ├── foursquare_service.py # Nearby places (free tier, Pro endpoints)
+│   │   ├── briefing_service.py   # Orchestrate daily briefing → push
+│   │   └── push_service.py       # Expo Push Notifications
 │   ├── data/
 │   │   ├── constants.py          # FINES, IDP_VALIDITY, VISA_FREE_DAYS, EMBASSY_CONTACTS
 │   │   └── emergency.py          # EMERGENCY_SCRIPTS (hardcoded, offline-safe)
-│   └── chroma_db/                # ← Copy pre-ingested ChromaDB here
+│   ├── models/
+│   │   └── user_location.py      # SQLite schema: user_id, lat, lng, recorded_at
+│   ├── chroma_db/                # ← Copy pre-ingested ChromaDB here
+│   └── tripguard.db              # SQLite — location history (auto-created)
 │
 └── frontend/
     └── app/
         ├── (tabs)/chat.tsx
         ├── (tabs)/checklist.tsx
         ├── (tabs)/emergency.tsx
-        └── onboarding/profile.tsx
+        ├── onboarding/profile.tsx
+        └── tasks/morning-briefing.ts  # Expo background fetch task
 ```
 
 ---
@@ -161,43 +170,20 @@ async def run_agent(
 ---
 ## UI Reference
 
-### Stack
-React Native (Expo) — all UI must target React Native components, not HTML/web.
+Before coding any screen, read the corresponding image in `docs/ui/`.
+Images are the source of truth for layout, spacing, and color — do not invent UI.
 
-### UI UX Pro Max Skill
-The `ui-ux-pro-max` skill is installed and active. It auto-generates a design system (style, colors, typography, effects) when UI work is requested.
+| Screen | File |
+|--------|------|
+| Chat | `docs/ui/chatbox_layout.jpg` |
+| Layout | `docs/ui/layout.png` |
+| UI | `docs/ui/io.jpeg` |
+For other screens not listed, extrapolate from the reference images above to maintain visual consistency.
 
-**How to use it with TripGuard:**
-1. Before generating any design system, run the search script to find the best match:
-   ```bash
-   python3 .claude/skills/ui-ux-pro-max/scripts/search.py "legal advisory travel safety mobile app" --design-system -p "TripGuard"
-   ```
-2. Persist the result as the project master design system:
-   ```bash
-   python3 .claude/skills/ui-ux-pro-max/scripts/search.py "legal advisory travel safety mobile app" --design-system --persist -p "TripGuard"
-   ```
-   This creates `design-system/MASTER.md` — the single source of truth for all UI decisions.
-3. For each screen, check if a page override exists in `design-system/pages/`. If not, use `MASTER.md`.
-
-**Override rule — reference images take priority over generated design system:**
-The images in `docs/ui/` are the final authority on layout, spacing, and visual structure. And a prior styles I want to use is **Liquid Glass + Glassmorphism**
-If the generated design system conflicts with a reference image, **the image wins**.
-
-### Reference Images
-
-| Screen | File | Authority |
-|--------|------|-----------|
-| Chat | `docs/ui/chatbox_layout.jpg` | Layout + component structure |
-| Layout | `docs/ui/layout.png` | Overall app shell + navigation |
-| UI | `docs/ui/io.jpeg` | Visual style + color tone |
-
-For screens not covered by a reference image: extrapolate from the images above to maintain consistency, then apply the generated design system for details (colors, typography, spacing values).
-
-### When implementing a screen
-1. Read the reference image if one exists
-2. Run the design system search if `design-system/MASTER.md` doesn't exist yet
-3. In the plan, list: components to create, which reference image applies, which design system rules apply
-4. Match the reference image for structure; use `MASTER.md` for design tokens (colors, fonts, spacing)
+When implementing a screen:
+1. Read the corresponding reference image
+2. In the plan, list the components to be created based on the image
+3. Match spacing, color, and layout as closely as possible
 
 ## Tool Registry
 
@@ -827,6 +813,359 @@ async def chat(req: ChatRequest):
 
 ---
 
+## Daily Briefing Feature
+
+Push a morning briefing at 9:00 AM **only if user has moved >50km** from yesterday's 9 AM location.
+
+### Architecture
+
+```
+[Frontend — Expo]                    [Backend — FastAPI]
+┌──────────────────────┐             ┌──────────────────────────────────────┐
+│ Background location  │  POST /api  │                                      │
+│ task at 9 AM         │─────────── ▶│  1. Compare with yesterday's coords  │
+│ (expo-task-manager)  │  /location  │  2. If distance > 50km:              │
+│                      │             │     a. Foursquare nearby search       │
+│ Expo Push token      │             │     b. retrieve_law() for area        │
+│ stored on backend    │             │     c. web_search() special alerts    │
+└──────────────────────┘             │     d. LLM synthesize briefing        │
+                                     │     e. Send via Expo Push             │
+                                     │  3. If distance ≤ 50km: do nothing   │
+                                     └──────────────────────────────────────┘
+```
+
+### New Files
+
+```
+backend/
+├── routers/
+│   └── location.py              # POST /api/location — receive coords, trigger briefing
+├── services/
+│   ├── location_service.py      # Haversine distance, store last location in DB
+│   ├── foursquare_service.py    # Nearby places via Foursquare Places API (free tier)
+│   ├── briefing_service.py      # Orchestrate: places + legal + alerts → LLM → push
+│   └── push_service.py          # Expo Push Notifications
+└── models/
+    └── user_location.py         # SQLite: user_id, lat, lng, recorded_at
+```
+
+### location_service.py
+
+```python
+import math, sqlite3
+from datetime import datetime, timedelta
+
+DB_PATH = "backend/tripguard.db"
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
+
+def get_yesterday_location(user_id: str) -> dict | None:
+    """Get user's location recorded closest to 9 AM yesterday."""
+    with sqlite3.connect(DB_PATH) as conn:
+        yesterday_9am = (datetime.now().replace(hour=9, minute=0, second=0)
+                         - timedelta(days=1)).isoformat()
+        row = conn.execute(
+            """SELECT lat, lng FROM user_locations
+               WHERE user_id = ? AND recorded_at >= ?
+               ORDER BY recorded_at ASC LIMIT 1""",
+            (user_id, yesterday_9am)
+        ).fetchone()
+    return {"lat": row[0], "lng": row[1]} if row else None
+
+def save_location(user_id: str, lat: float, lng: float):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO user_locations (user_id, lat, lng, recorded_at) VALUES (?, ?, ?, ?)",
+            (user_id, lat, lng, datetime.now().isoformat())
+        )
+
+def should_send_briefing(user_id: str, lat: float, lng: float) -> bool:
+    """Returns True only if user moved >50km since yesterday 9 AM."""
+    yesterday = get_yesterday_location(user_id)
+    if not yesterday:
+        return True  # First time → always send
+    dist = haversine_km(yesterday["lat"], yesterday["lng"], lat, lng)
+    return dist > 50
+```
+
+### foursquare_service.py
+
+```python
+import os, httpx
+
+FSQ_API_KEY = os.environ["FOURSQUARE_API_KEY"]
+FSQ_URL     = "https://api.foursquare.com/v3/places/nearby"
+
+# Free tier: 10,000 calls/month on Pro endpoints — Nearby Search is Pro
+TOURIST_CATEGORIES = "16000,13000,19000"  # Landmarks, Food, Travel
+
+def get_nearby_places(lat: float, lng: float, limit: int = 5) -> list[dict]:
+    """Returns top N tourist spots near coordinates."""
+    try:
+        resp = httpx.get(
+            FSQ_URL,
+            headers={
+                "Authorization": FSQ_API_KEY,
+                "Accept": "application/json",
+            },
+            params={
+                "ll": f"{lat},{lng}",
+                "categories": TOURIST_CATEGORIES,
+                "limit": limit,
+                "fields": "name,location,categories,distance",  # Pro fields only — stay free
+            },
+            timeout=10,
+        )
+        data = resp.json()
+        places = []
+        for r in data.get("results", []):
+            places.append({
+                "name": r.get("name"),
+                "category": r["categories"][0]["name"] if r.get("categories") else "Place",
+                "distance_m": r.get("distance"),
+                "address": r.get("location", {}).get("formatted_address", ""),
+            })
+        return places
+    except Exception as e:
+        return []
+```
+
+### briefing_service.py
+
+```python
+from .foursquare_service import get_nearby_places
+from .rag_service import retrieve
+from .web_search_service import web_search
+from .push_service import send_push
+from .llm_adapter import get_adapter
+
+BRIEFING_SYSTEM = """You are TripGuard's morning briefing assistant.
+Generate a concise, friendly morning briefing for a tourist in Vietnam.
+
+Structure (keep it short — this is a push notification):
+1. 📍 Where you are: [area name if known]
+2. 🏛️ Top spots nearby: list {places}
+3. ⚖️ Legal reminders for this area: key rules from context
+4. ⚠️ Special alerts: drone zones, photo restrictions, etc.
+
+Keep total length under 300 words. Respond in the user's language: {language}.
+Do NOT include generic tourism advice — only specific, actionable info."""
+
+async def generate_and_send_briefing(
+    user_id: str,
+    lat: float,
+    lng: float,
+    user_profile: dict,
+    push_token: str,
+):
+    llm = get_adapter()
+
+    # 1. Nearby places (Foursquare)
+    places = get_nearby_places(lat, lng)
+    places_text = "\n".join(
+        f"- {p['name']} ({p['category']}, {p['distance_m']}m)" for p in places
+    ) or "No nearby tourist spots found."
+
+    # 2. Legal context for this area (ChromaDB)
+    area_query = f"tourist rules regulations Vietnam {lat} {lng}"
+    law_chunks = retrieve(area_query, n=3)
+    law_context = "\n---\n".join(law_chunks) if law_chunks else ""
+
+    # 3. Special alerts via web search (drone zones, restricted areas)
+    location_name = _reverse_geocode_approx(lat, lng)
+    alerts_raw = web_search(f"drone ban photo restriction tourist warning {location_name} Vietnam 2025", max_results=3)
+
+    # 4. LLM synthesize
+    response = llm.chat_with_tools(
+        messages=[
+            {"role": "system", "content": BRIEFING_SYSTEM.format(
+                places=places_text,
+                language=user_profile.get("language", "English"),
+            )},
+            {"role": "user", "content": f"""
+Location: {location_name} ({lat}, {lng})
+User: {user_profile.get('nationality')}, has drone: {user_profile.get('has_drone')}
+
+Legal context:
+{law_context}
+
+Web alerts:
+{alerts_raw}
+"""}
+        ],
+        tools=[],  # No tool calls in briefing — just synthesize
+    )
+
+    briefing_text = response["content"]
+
+    # 5. Send push notification
+    await send_push(
+        token=push_token,
+        title="Good morning from TripGuard",
+        body=briefing_text[:150] + "...",  # Preview
+        data={"full_briefing": briefing_text, "lat": lat, "lng": lng},
+    )
+
+def _reverse_geocode_approx(lat: float, lng: float) -> str:
+    """Best-effort area name without API call — expand as needed."""
+    # Known Vietnam tourist areas (rough bounding boxes)
+    AREAS = [
+        ((15.95, 108.15), (16.10, 108.30), "Hoi An"),
+        ((10.70, 106.60), (10.90, 106.80), "Ho Chi Minh City"),
+        ((21.00, 105.80), (21.10, 105.90), "Hanoi Old Quarter"),
+        ((20.80, 106.95), (21.05, 107.20), "Ha Long Bay"),
+        ((16.40, 107.55), (16.55, 107.70), "Hue"),
+        ((10.90, 107.05), (11.10, 107.25), "Vung Tau"),
+    ]
+    for (lat_min, lng_min), (lat_max, lng_max), name in AREAS:
+        if lat_min <= lat <= lat_max and lng_min <= lng <= lng_max:
+            return name
+    return f"Vietnam ({lat:.2f}, {lng:.2f})"
+```
+
+### push_service.py
+
+```python
+import httpx
+
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+
+async def send_push(token: str, title: str, body: str, data: dict = None):
+    """Send via Expo Push Notifications — free, no Firebase setup needed."""
+    if not token.startswith("ExponentPushToken"):
+        return  # Invalid token, skip silently
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                EXPO_PUSH_URL,
+                json={
+                    "to": token,
+                    "title": title,
+                    "body": body,
+                    "data": data or {},
+                    "sound": "default",
+                },
+                timeout=10,
+            )
+    except Exception:
+        pass  # Don't fail the main flow if push fails
+```
+
+### Frontend — Background Task (React Native / Expo)
+
+```typescript
+// app/tasks/morning-briefing.ts
+import * as TaskManager from 'expo-task-manager';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+
+const TASK_NAME = 'MORNING_BRIEFING';
+
+TaskManager.defineTask(TASK_NAME, async () => {
+  try {
+    const now = new Date();
+    // Only run between 8:55–9:05 AM
+    if (now.getHours() !== 9 || now.getMinutes() > 5) {
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    const pushToken = (await Notifications.getExpoPushTokenAsync()).data;
+    const userProfile = await getUserProfile(); // from AsyncStorage
+
+    await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userProfile.userId,
+        lat: location.coords.latitude,
+        lng: location.coords.longitude,
+        push_token: pushToken,
+        user_profile: userProfile,
+      }),
+    });
+
+    return BackgroundFetch.BackgroundFetchResult.NewData;
+  } catch {
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+});
+
+export async function registerBriefingTask() {
+  await BackgroundFetch.registerTaskAsync(TASK_NAME, {
+    minimumInterval: 60 * 60 * 8, // every 8 hours max — OS decides actual timing
+    stopOnTerminate: false,
+    startOnBoot: true,
+  });
+}
+```
+
+### API Endpoint
+
+```python
+# backend/routers/location.py
+from fastapi import APIRouter
+from pydantic import BaseModel
+from ..services.location_service import save_location, should_send_briefing
+from ..services.briefing_service import generate_and_send_briefing
+
+router = APIRouter()
+
+class LocationPayload(BaseModel):
+    user_id: str
+    lat: float
+    lng: float
+    push_token: str
+    user_profile: dict
+
+@router.post("/api/location")
+async def receive_location(payload: LocationPayload):
+    save_location(payload.user_id, payload.lat, payload.lng)
+
+    if should_send_briefing(payload.user_id, payload.lat, payload.lng):
+        await generate_and_send_briefing(
+            user_id=payload.user_id,
+            lat=payload.lat,
+            lng=payload.lng,
+            user_profile=payload.user_profile,
+            push_token=payload.push_token,
+        )
+        return {"briefing_sent": True}
+
+    return {"briefing_sent": False, "reason": "Location unchanged (<50km)"}
+```
+
+### DB Schema (SQLite)
+
+```sql
+CREATE TABLE IF NOT EXISTS user_locations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    lat         REAL NOT NULL,
+    lng         REAL NOT NULL,
+    recorded_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_time ON user_locations(user_id, recorded_at);
+```
+
+### Key Design Decisions
+
+- **Expo Push (not Firebase)** — free, zero setup, works with Expo managed workflow
+- **Foursquare free tier** — 10,000 calls/month, Nearby Search is Pro (free), no credit card needed for dev
+- **Background fetch not guaranteed at exactly 9 AM** — iOS/Android OS may delay; acceptable for a briefing use case
+- **Distance check on backend** — frontend just sends coordinates, backend decides whether to send. Prevents spam if user opens app multiple times
+- **Briefing ≤300 words** — push notification preview is 150 chars, full content in notification data payload
+
+---
+
 ## Environment Variables
 
 ```bash
@@ -845,6 +1184,7 @@ EMBEDDING_MODEL=BAAI/bge-m3
 TAVILY_API_KEY=tvly-...
 TINYFISH_API_KEY=tf-...
 OPENROUTER_API_KEY=sk-or-...    # also used for vision (Gemini Flash)
+FOURSQUARE_API_KEY=fsq3...      # free tier: 10,000 calls/month
 
 # Frontend
 GOOGLE_MAPS_API_KEY=...
@@ -921,163 +1261,9 @@ Ready to proceed? (y/n)
 - Search→Scrape is fallback only — agent decides when `retrieve_law()` has insufficient confidence
 - Emergency mode must work **offline** — `get_emergency_steps()` calls no external APIs
 - TinyFish `/run` (sync) timeout is 25s — on timeout, skip the URL, do not retry
+- Daily briefing only triggers when `haversine_km() > 50` — backend enforces, frontend just sends coords
+- Foursquare Nearby Search uses **Pro fields only** (`name, location, categories, distance`) — stays on free tier
+- SQLite `tripguard.db` auto-created on first run — no migration needed
+- Expo background fetch is **not guaranteed at exactly 9 AM** — OS may delay; acceptable for briefing use case
 - UI UX Pro Max skill is active — run `design-system/MASTER.md` generation once before building any UI (see UI Reference section). Reference images in `docs/ui/` override the generated design system for layout decisions.
-- `.gitignore`: `backend/chroma_db/`, `rag/`, `venv*/`, `.env`
-
----
-
-## Integration Contract
-
-> Canonical shapes for every frontend↔backend integration point.
-> Full TypeScript interfaces live in `docs/api-contract.ts`.
-> This section is the quick-reference version for Claude Code.
-
----
-
-### Canonical UserProfile fields
-
-These are the **exact** key names the backend requires.
-`SYSTEM_PROMPT.format(**user_profile)` will raise `KeyError` if any is missing or misspelled.
-
-| Field | Type | Example values |
-|-------|------|----------------|
-| `nationality` | `str` | `"United States"`, `"Germany"` |
-| `idp_type` | `str` | `"1968 Vienna Convention"` · `"1949 Geneva"` · `"ASEAN"` · `"Bilateral"` · `"None"` |
-| `visa_free_days` | `int` | `45`, `30`, `0` |
-| `has_drone` | `bool` | `True` / `False` |
-| `drone_model` | `str` | `"DJI Mini 4 Pro"` · `"None"` |
-
-No other keys may be added — `.format(**user_profile)` is strict.
-
----
-
-### ChatRequest (POST /api/chat)
-
-```json
-{
-  "message": "Can I ride a motorbike with my US license?",
-  "user_profile": {
-    "nationality": "United States",
-    "idp_type": "1949 Geneva",
-    "visa_free_days": 0,
-    "has_drone": false,
-    "drone_model": "None"
-  },
-  "conversation_history": [
-    { "role": "user",      "content": "prior user turn" },
-    { "role": "assistant", "content": "prior assistant reply" }
-  ]
-}
-```
-
-**Rules:**
-- `conversation_history` must contain **only prior turns** — NOT the current `message`.
-  (See breaking bug #1 below — current code sends the current user turn twice.)
-- Each history entry must have exactly `role` and `content` — no extra fields.
-
----
-
-### ChatResponse (POST /api/chat)
-
-```json
-{
-  "answer": "❌ Illegal — ...\n\nWhat the law says:\n...\n\nSource: NĐ 168/2024/NĐ-CP Điều 5\n⚠️ Legal information only, not legal advice.",
-  "sources": [
-    "https://thuvienphapluat.vn/...",
-    "NĐ 168/2024/NĐ-CP Điều 5"
-  ],
-  "debug": {
-    "steps": ["Step 1: retrieve_law → ..."],
-    "tools_used": [{ "tool": "retrieve_law", "args": { "query": "..." } }]
-  }
-}
-```
-
-Frontend currently consumes only `answer`. `sources` and `debug` are available but unused.
-
----
-
-### VisionRequest (POST /api/vision)
-
-```json
-{ "image_b64": "<raw base64 string — NO data:image/jpeg;base64, prefix>" }
-```
-
-The backend (`vision_service.py`) adds the `data:image/jpeg;base64,` prefix before calling Gemini Flash.
-Frontend must send **raw base64** only (as returned by `ImagePicker` with `base64: true`).
-
----
-
-### VisionResponse (POST /api/vision)
-
-```json
-{ "code": "P.102", "name": "No Entry", "category": "prohibition", "meaning": "..." }
-```
-
-When the image is not a recognised traffic sign:
-
-```json
-{ "code": null, "name": null, "meaning": null }
-```
-
-After receiving a successful vision response, the string injected into the chat `message` **must** follow this exact format so the agent's `_SIGN_PATTERN` regex triggers pre-search enrichment:
-
-```
-[Traffic sign in photo: P.102 — "No Entry"]
-```
-
----
-
-### Tabs — local vs backend
-
-| Tab | API calls | Data source |
-|-----|-----------|-------------|
-| `chat` | `POST /api/chat`, `POST /api/vision` | Backend (FastAPI) |
-| `checklist` | **None** | AsyncStorage (user profile + chat threads) |
-| `emergency` | **None** | `frontend/constants/emergency.ts` (hardcoded, offline-safe) |
-
----
-
-### Breaking mismatches (must fix before app works correctly)
-
-#### Bug #1 — Conversation history double-send
-
-**File:** `frontend/app/(tabs)/chat.tsx` ~line 247–269
-**Problem:** The new user message is appended to `convo` first, then the entire `convo` array is mapped into `conversation_history`. The backend then appends `message` again — the current user turn appears **twice** in the LLM context.
-**Fix:** Build `conversation_history` from messages **before** appending the new user message, or use `convo.slice(0, -1)`.
-
-```typescript
-// Current (broken)
-const convo = [...messages, userMessage];
-setMessages(convo);
-const history = convo.map((m) => ({ role: m.role, content: m.content }));
-
-// Fixed
-const history = messages.map((m) => ({ role: m.role, content: m.content }));
-const convo = [...messages, userMessage];
-setMessages(convo);
-```
-
----
-
-#### Bug #2 — Vision sign format mismatch
-
-**Files:** `frontend/app/(tabs)/chat.tsx` ~line 228 · `backend/services/agent.py` ~line 244
-**Problem:** Frontend formats identified signs as:
-```
-- Image 1: P.102 No Entry — Do not enter at this road
-```
-Agent `_SIGN_PATTERN` expects:
-```
-[Traffic sign in photo: P.102 — "No Entry"]
-```
-`_presearch_sign()` never fires → no web_search + scrape pre-enrichment for sign queries.
-**Fix:** Change the frontend injection line:
-
-```typescript
-// Current (broken)
-lines.push(`- Image ${i + 1}: ${sign.code} ${sign.name} — ${sign.meaning}`);
-
-// Fixed
-lines.push(`[Traffic sign in photo: ${sign.code} — "${sign.name}"]`);
-```
+- `.gitignore`: `backend/chroma_db/`, `rag/`, `venv*/`, `.env`, `backend/tripguard.db`
