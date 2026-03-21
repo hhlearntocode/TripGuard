@@ -24,14 +24,10 @@ export const mobileTheme = {
   },
   fonts: {
     display: Platform.select({
-      ios: "Georgia",
-      android: "serif",
-      default: "Georgia",
+      default: "Rubik_700Bold",
     }),
     body: Platform.select({
-      ios: "System",
-      android: "sans-serif",
-      default: "System",
+      default: "Rubik_400Regular",
     }),
   },
 };

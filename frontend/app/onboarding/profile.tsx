@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   ScrollView,
   StyleSheet,
   Switch,
@@ -26,6 +28,8 @@ export default function ProfileScreen() {
   const [hasDrone, setHasDrone] = useState(false);
   const [droneModel, setDroneModel] = useState("DJI Mini 4 Pro");
   const [accessFlow, setAccessFlow] = useState<AccessFlowState>("sealed");
+  const [showRequiredHints, setShowRequiredHints] = useState(false);
+  const identityWiggle = useRef(new Animated.Value(0)).current;
 
   const filtered = NATIONALITIES.filter((n) =>
     n.toLowerCase().includes(search.toLowerCase())
@@ -33,6 +37,67 @@ export default function ProfileScreen() {
 
   const idpInfo = nationality ? getIdpStatus(nationality) : null;
   const visaFreeDays = nationality ? getVisaFreeDays(nationality) : 0;
+  const missingNationality = showRequiredHints && !nationality;
+
+  function triggerIdentityShake() {
+    identityWiggle.setValue(0);
+    Animated.sequence([
+      Animated.timing(identityWiggle, {
+        toValue: -10,
+        duration: 40,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+      Animated.timing(identityWiggle, {
+        toValue: 10,
+        duration: 60,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+      Animated.timing(identityWiggle, {
+        toValue: -8,
+        duration: 55,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+      Animated.timing(identityWiggle, {
+        toValue: 8,
+        duration: 55,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+      Animated.timing(identityWiggle, {
+        toValue: -4,
+        duration: 45,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+      Animated.timing(identityWiggle, {
+        toValue: 0,
+        duration: 45,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }
+
+  async function handleObserverContinue() {
+    if (!nationality) {
+      setShowRequiredHints(true);
+      triggerIdentityShake();
+      return;
+    }
+    await handleFinish("observer");
+  }
+
+  function handleProtectedReveal() {
+    if (!nationality) {
+      setShowRequiredHints(true);
+      triggerIdentityShake();
+      return;
+    }
+    setAccessFlow("revealing");
+  }
 
   async function handleFinish(trustTier: "observer" | "protected") {
     const idp = idpInfo;
@@ -60,6 +125,10 @@ export default function ProfileScreen() {
     handleFinish("protected");
   }, [accessFlow]);
 
+  useEffect(() => {
+    if (nationality) setShowRequiredHints(false);
+  }, [nationality]);
+
   return (
     <ScreenSurface
       title="Protected Access Intake"
@@ -74,20 +143,29 @@ export default function ProfileScreen() {
         </Text>
       </View>
 
-      <View style={styles.sectionCard}>
+      <Animated.View style={{ transform: [{ translateX: identityWiggle }] }}>
+        <View style={[styles.sectionCard, missingNationality && styles.sectionCardRequired]}>
         <SectionHeader
           eyebrow="Identity"
           title="Tell TripGuard who is arriving."
           detail="Nationality determines the first layer of license and visa guidance."
         />
-        <ScrollView style={styles.optionScroll} keyboardShouldPersistTaps="handled">
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search nationality"
-            value={search}
-            onChangeText={setSearch}
-            placeholderTextColor="#8A7E70"
-          />
+        <TextInput
+          style={[styles.searchInput, missingNationality && styles.searchInputRequired]}
+          placeholder="Search nationality"
+          value={search}
+          onChangeText={setSearch}
+          placeholderTextColor="#8A7E70"
+        />
+        {missingNationality && (
+          <Text style={styles.requiredHint}>Nationality is required before continuing.</Text>
+        )}
+        <ScrollView
+          style={styles.optionScroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+        >
           {filtered.map((n) => (
             <TouchableOpacity
               key={n}
@@ -101,7 +179,8 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
-      </View>
+        </View>
+      </Animated.View>
 
       <View style={styles.sectionCard}>
         <SectionHeader
@@ -177,13 +256,17 @@ export default function ProfileScreen() {
 
         <TouchableOpacity
           activeOpacity={0.92}
-          style={[styles.revealPanel, accessFlow === "revealing" && styles.revealPanelActive]}
-          onPress={() => setAccessFlow("revealing")}
+          style={[
+            styles.revealPanel,
+            accessFlow === "revealing" && styles.revealPanelActive,
+            missingNationality && styles.revealPanelRequired,
+          ]}
+          onPress={handleProtectedReveal}
         >
           <Text style={styles.revealTitle}>
             {accessFlow === "sealed" ? "Reveal protected access" : "Protected access ready"}
           </Text>
-          <Text style={styles.revealBody}>
+          <Text style={[styles.revealBody, missingNationality && styles.revealBodyRequired]}>
             {accessFlow === "sealed"
               ? "Open the gate when the profile looks correct."
               : "Hold to confirm. This stores your trust tier locally and takes you into the app."}
@@ -199,12 +282,8 @@ export default function ProfileScreen() {
           />
         )}
 
-        <TouchableOpacity
-          style={styles.secondaryLink}
-          disabled={!nationality}
-          onPress={() => handleFinish("observer")}
-        >
-          <Text style={[styles.secondaryLinkText, !nationality && styles.secondaryLinkDisabled]}>
+        <TouchableOpacity style={styles.secondaryLink} onPress={() => void handleObserverContinue()}>
+          <Text style={[styles.secondaryLinkText, missingNationality && styles.secondaryLinkWarning]}>
             Continue with standard access
           </Text>
         </TouchableOpacity>
@@ -254,6 +333,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: mobileTheme.colors.line,
   },
+  sectionCardRequired: {
+    borderColor: "rgba(161, 46, 46, 0.42)",
+    backgroundColor: "#FFF7F5",
+  },
   accessCard: {
     marginBottom: 24,
   },
@@ -269,6 +352,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 12,
     color: mobileTheme.colors.textPrimary,
+  },
+  searchInputRequired: {
+    borderColor: "rgba(161, 46, 46, 0.58)",
+    backgroundColor: "#FFF1EE",
+  },
+  requiredHint: {
+    color: "#A12E2E",
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 10,
+    fontWeight: "600",
   },
   option: {
     backgroundColor: mobileTheme.colors.surface,
@@ -387,6 +482,10 @@ const styles = StyleSheet.create({
     borderColor: mobileTheme.colors.gold,
     backgroundColor: mobileTheme.colors.goldSoft,
   },
+  revealPanelRequired: {
+    borderColor: "rgba(161, 46, 46, 0.42)",
+    backgroundColor: "#FFF1EE",
+  },
   revealTitle: {
     color: mobileTheme.colors.textPrimary,
     fontFamily: mobileTheme.fonts.body,
@@ -399,6 +498,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
+  revealBodyRequired: {
+    color: "#7C2B2B",
+  },
   secondaryLink: {
     alignItems: "center",
     paddingVertical: 6,
@@ -409,7 +511,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
-  secondaryLinkDisabled: {
-    color: "#A49787",
+  secondaryLinkWarning: {
+    color: "#A12E2E",
   },
 });
