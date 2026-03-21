@@ -32,7 +32,7 @@ interface Message {
 }
 
 export default function ChatScreen() {
-  const params = useLocalSearchParams<{ query?: string }>();
+  const params = useLocalSearchParams<{ query?: string; entry?: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -41,10 +41,14 @@ export default function ChatScreen() {
 
   const quickScenarios = useMemo(
     () => [
-      "Can I bring this into Vietnam?",
-      "Is this area restricted for foreigners?",
-      "What happens if I do this?",
-      "Can I ride here with my current license?",
+      "I have a small drone. Can I fly it near a temple in Vietnam?",
+      "I’m carrying prescription medicine from my country. Can I bring it into Vietnam legally?",
+      "I rented a motorbike in Vietnam. Can I ride it with my foreign driver’s license?",
+      "What will happen if I accidentally enter a restricted military or border area?",
+      "Can I bring a vape or e-cigarette into Vietnam through the airport?",
+      "Is it legal to take photos or videos at historical or religious sites?",
+      "What are the risks if I overstay my visa in Vietnam?",
+      "Can I carry cash over the allowed limit when entering Vietnam?",
     ],
     []
   );
@@ -57,6 +61,11 @@ export default function ChatScreen() {
     if (!params.query || Array.isArray(params.query)) return;
     setInput(params.query);
   }, [params.query]);
+
+  useEffect(() => {
+    if (params.entry !== "scan") return;
+    pickImage();
+  }, [params.entry]);
 
   const persistHistory = async (query: string, answer: string) => {
     const entry: ChatHistoryEntry = {
@@ -182,6 +191,13 @@ export default function ChatScreen() {
                   <Text style={styles.quickChipText}>{scenario}</Text>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity
+                style={[styles.quickChip, styles.scanChip]}
+                onPress={pickImage}
+              >
+                <Ionicons name="camera-outline" size={15} color={mobileTheme.colors.primary} />
+                <Text style={styles.quickChipText}>Scan sign or notice</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.inputRow}>
@@ -276,12 +292,18 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   quickChipText: {
     color: mobileTheme.colors.textPrimary,
     fontFamily: mobileTheme.fonts.body,
     fontSize: 13,
     fontWeight: "500",
+  },
+  scanChip: {
+    backgroundColor: mobileTheme.colors.primarySoft,
   },
   inputRow: {
     flexDirection: "row",

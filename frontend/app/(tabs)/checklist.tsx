@@ -1,264 +1,198 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
-import { getIdpStatus, getVisaFreeDays, DRONE_WEIGHTS } from "@/constants/legal";
 import ScreenSurface from "@/components/ui/ScreenSurface";
-import AppDashboardMenu from "@/components/ui/AppDashboardMenu";
+import SafetyQuestionCard from "@/components/ui/SafetyQuestionCard";
+import StatusSummaryBlock from "@/components/ui/StatusSummaryBlock";
+import RiskCategoryTile from "@/components/ui/RiskCategoryTile";
+import PrimarySafetyFab from "@/components/ui/PrimarySafetyFab";
 import SectionHeader from "@/components/ui/SectionHeader";
-import StatusPill from "@/components/ui/StatusPill";
+import { loadChatHistory, ChatHistoryEntry } from "@/hooks/useChatHistory";
+import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
+import { deriveLegalityState } from "@/features/flows";
 import { mobileTheme } from "@/theme/mobileTheme";
 
-interface CheckItem {
-  id: string;
-  title: string;
-  status: "ok" | "warning" | "error";
-  detail: string;
-  law?: string;
-}
+const FALLBACK_QUERY = "Can I fly a drone near a temple?";
+const FALLBACK_PREVIEW = "⚠️ Restricted. Cultural and religious sites often carry additional sensitivity and enforcement risk. Verify local restrictions and keep distance before flying.";
 
-function buildChecklist(profile: UserProfile): CheckItem[] {
-  const items: CheckItem[] = [];
-  const idp = getIdpStatus(profile.nationality);
-
-  items.push({
-    id: "idp",
-    title: "International Driving Permit",
-    status: idp.valid ? "ok" : "error",
-    detail: idp.note,
-    law: "NĐ 168/2024/NĐ-CP Điều 5",
-  });
-
-  const visaDays = getVisaFreeDays(profile.nationality);
-  if (visaDays > 0) {
-    items.push({
-      id: "visa",
-      title: "Visa / Entry",
-      status: "ok",
-      detail: `${visaDays} days visa-free for ${profile.nationality} citizens`,
-      law: "Immigration Law 2014",
-    });
-  } else {
-    items.push({
-      id: "visa",
-      title: "Visa / Entry",
-      status: "error",
-      detail: `${profile.nationality} citizens require an e-visa before arrival`,
-      law: "NĐ 07/2023/NĐ-CP",
-    });
-  }
-
-  if (profile.has_drone) {
-    const droneInfo = DRONE_WEIGHTS[profile.drone_model] || DRONE_WEIGHTS.Other;
-    items.push({
-      id: "drone",
-      title: `Drone: ${profile.drone_model}`,
-      status: droneInfo.requiresPermit ? "error" : "ok",
-      detail: droneInfo.requiresPermit
-        ? `${droneInfo.weight}g — permit and local sponsor should be assumed`
-        : `${droneInfo.weight}g — under 250g threshold`,
-      law: "NĐ 288/2025/NĐ-CP",
-    });
-  }
-
-  items.push({
-    id: "helmet",
-    title: "Motorbike Helmet",
-    status: "warning",
-    detail: "Mandatory for all riders. Enforcement is routine.",
-    law: "NĐ 168/2024/NĐ-CP",
-  });
-
-  items.push({
-    id: "alcohol",
-    title: "Alcohol Limit",
-    status: "warning",
-    detail: "Any detectable alcohol level while driving is risky.",
-    law: "NĐ 168/2024/NĐ-CP",
-  });
-
-  items.push({
-    id: "drugs",
-    title: "Drug Laws",
-    status: "warning",
-    detail: "TripGuard treats drug scenarios as high-risk by default.",
-    law: "Bộ luật Hình sự 2015",
-  });
-
-  return items;
-}
-
-const STATUS_ICONS = {
-  ok: { icon: "checkmark-circle-outline", color: mobileTheme.colors.success, bg: mobileTheme.colors.successSoft },
-  warning: { icon: "alert-circle-outline", color: mobileTheme.colors.warning, bg: mobileTheme.colors.warningSoft },
-  error: { icon: "close-circle-outline", color: mobileTheme.colors.danger, bg: mobileTheme.colors.dangerSoft },
-};
-
-const QUICK_INTENTS = [
-  "Can I bring this into Vietnam?",
-  "Is this area restricted?",
-  "What happens if I do this?",
+const CATEGORY_ITEMS = [
+  {
+    title: "Drugs",
+    detail: "Possession and testing risks",
+    icon: "flask-outline" as const,
+    query: "What are the legal risks if I carry or use drugs in Vietnam?",
+  },
+  {
+    title: "Drone usage",
+    detail: "Permits, altitude, location",
+    icon: "airplane-outline" as const,
+    query: "Can I fly a drone here and what permits do I need?",
+  },
+  {
+    title: "Cultural sensitivity",
+    detail: "Temples, dress, conduct",
+    icon: "library-outline" as const,
+    query: "Is this behavior culturally or legally sensitive near a temple?",
+  },
+  {
+    title: "Restricted zones",
+    detail: "Military and controlled areas",
+    icon: "location-outline" as const,
+    query: "Is this area restricted for foreigners or filming?",
+  },
+  {
+    title: "Customs / border rules",
+    detail: "Import and arrival checks",
+    icon: "briefcase-outline" as const,
+    query: "Can I bring this item into Vietnam through customs?",
+  },
 ];
 
-export default function BriefingScreen() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+export default function TravelSafetyScreen() {
   const router = useRouter();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [latestEntry, setLatestEntry] = useState<ChatHistoryEntry | null>(null);
 
   useEffect(() => {
     loadUserProfile().then(setProfile);
+    loadChatHistory().then((entries) => setLatestEntry(entries[0] || null));
   }, []);
 
-  if (!profile) {
-    return (
-      <ScreenSurface
-        title="Travel Briefing"
-        subtitle="TripGuard needs a profile before it can establish a legal posture."
-        leftNode={<AppDashboardMenu />}
-        scrollable={false}
-      >
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Profile required</Text>
-          <Text style={styles.emptyBody}>Set up your intake profile to unlock your travel briefing.</Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push("/onboarding/profile")}>
-            <Text style={styles.primaryButtonText}>Open intake</Text>
-          </TouchableOpacity>
-        </View>
-      </ScreenSurface>
-    );
-  }
+  const question = latestEntry?.query || FALLBACK_QUERY;
+  const preview = latestEntry?.preview || FALLBACK_PREVIEW;
+  const latestState = useMemo(() => deriveLegalityState(preview), [preview]);
 
-  const items = buildChecklist(profile);
-  const errors = items.filter((i) => i.status === "error").length;
-  const warnings = items.filter((i) => i.status === "warning").length;
-  const readinessState = errors > 0 ? "restricted" : warnings > 0 ? "warning" : "safe";
-  const topSignals = items.slice(0, 4);
+  const allowedText = profile
+    ? `${profile.nationality} profile loaded. Use this for low-risk checks and simple confirmations.`
+    : "Use this when you expect the action to be routine, but still want confirmation first.";
+
+  const restrictedText = latestState === "warning" || latestState === "restricted"
+    ? "Recent checks suggest some actions need conditions, permits, or location awareness."
+    : "TripGuard will classify borderline cases here before they become a mistake.";
+
+  const riskText = profile?.has_drone
+    ? "Drone travel, controlled zones, and customs scenarios deserve immediate caution."
+    : "Drug, customs, and restricted-zone scenarios should always be treated as high risk.";
 
   return (
-    <ScreenSurface
-      title="Travel Briefing"
-      subtitle="Orient yourself before you ask a specific legal question."
-      leftNode={<AppDashboardMenu />}
-      rightNode={<StatusPill state={readinessState} />}
-    >
-      <View style={styles.heroCard}>
-        <Text style={styles.heroEyebrow}>Trip posture overview</Text>
-        <Text style={styles.heroTitle}>
-          {errors > 0
-            ? "There are immediate legal exposures in your travel profile."
-            : warnings > 0
-              ? "Your trip is broadly viable, but a few conditions need attention."
-              : "Your profile is currently in a clear travel posture."}
-        </Text>
-        <Text style={styles.heroBody}>
-          TripGuard uses this briefing as a pre-check layer. Use the Check screen for scenario-specific legality.
-        </Text>
-      </View>
-
-      <View style={styles.sectionCard}>
-        <SectionHeader
-          eyebrow="Core journey"
-          title="Start from a clear question, not broad browsing."
-          detail="TripGuard is strongest when you enter the decision you are about to make."
-        />
-        <View style={styles.intentGrid}>
-          {QUICK_INTENTS.map((intent) => (
-            <TouchableOpacity
-              key={intent}
-              style={styles.intentCard}
-              onPress={() => router.push({ pathname: "/(tabs)/chat", params: { query: intent } })}
-            >
-              <Ionicons name="arrow-forward-circle-outline" size={18} color={mobileTheme.colors.primary} />
-              <Text style={styles.intentText}>{intent}</Text>
-            </TouchableOpacity>
-          ))}
+    <View style={styles.screen}>
+      <ScreenSurface
+        title="Travel Safety"
+        subtitle="Clear legality signals before you act."
+      >
+        <View style={styles.topBarActions}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Search legal checks"
+            style={styles.headerAction}
+            onPress={() => router.push("/(tabs)/chat")}
+          >
+            <Ionicons name="search-outline" size={18} color={mobileTheme.colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Open travel profile"
+            style={styles.headerAction}
+            onPress={() => router.push("/onboarding/profile")}
+          >
+            <Ionicons name="person-outline" size={18} color={mobileTheme.colors.textPrimary} />
+          </TouchableOpacity>
         </View>
-      </View>
 
-      <View style={styles.sectionCard}>
-        <SectionHeader
-          eyebrow="Watchlist"
-          title="What TripGuard wants you to notice first."
-          detail="These are profile-level signals worth resolving before high-risk activity."
+        <SafetyQuestionCard
+          question={question}
+          preview={preview}
+          detail="TripGuard stores the latest assessed scenario here so the user can resume a safety decision without reconstructing context."
+          onReview={() => router.push({ pathname: "/(tabs)/chat", params: { query: question } })}
         />
-        <View style={styles.signalList}>
-          {topSignals.map((item) => {
-            const s = STATUS_ICONS[item.status];
-            return (
-              <View key={item.id} style={styles.signalRow}>
-                <View style={[styles.signalIcon, { backgroundColor: s.bg }]}>
-                  <Ionicons name={s.icon as any} size={18} color={s.color} />
-                </View>
-                <View style={styles.signalCopy}>
-                  <Text style={styles.signalTitle}>{item.title}</Text>
-                  <Text style={styles.signalDetail}>{item.detail}</Text>
-                </View>
-              </View>
-            );
-          })}
+
+        <View style={styles.sectionCard}>
+          <SectionHeader
+            eyebrow="Status overview"
+            title="Three immediate legal postures"
+            detail="These replace generic watchlist cards with faster decision labels."
+          />
+          <View style={styles.statusStack}>
+            <StatusSummaryBlock
+              title="Allowed"
+              tone="safe"
+              body={allowedText}
+              detail="TripGuard still expects the user to verify the exact scenario before acting. Allowed does not mean unreviewed."
+            />
+            <StatusSummaryBlock
+              title="Restricted"
+              tone="warning"
+              body={restrictedText}
+              detail="Restricted scenarios usually need permit checks, location checks, or traveler-specific conditions."
+            />
+            <StatusSummaryBlock
+              title="High Risk"
+              tone="danger"
+              body={riskText}
+              detail="High-risk categories should push the user toward explicit scenario review or emergency guidance, not casual exploration."
+            />
+          </View>
         </View>
-      </View>
 
-      <View style={styles.sectionCard}>
-        <SectionHeader
-          eyebrow="Profile"
-          title="Briefing context"
-          detail="This is the context TripGuard is using before it evaluates your next scenario."
-        />
-        <View style={styles.profileGrid}>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricLabel}>Nationality</Text>
-            <Text style={styles.metricValue}>{profile.nationality}</Text>
+        <View style={styles.sectionCard}>
+          <SectionHeader
+            eyebrow="Legal categories"
+            title="Tap the area that feels uncertain"
+            detail="Each category opens a prefilled legality question to reduce friction under stress."
+          />
+          <View style={styles.categoryGrid}>
+            {CATEGORY_ITEMS.map((item) => (
+              <RiskCategoryTile
+                key={item.title}
+                title={item.title}
+                detail={item.detail}
+                icon={item.icon}
+                onPress={() => router.push({ pathname: "/(tabs)/chat", params: { query: item.query } })}
+              />
+            ))}
           </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricLabel}>Driving</Text>
-            <Text style={styles.metricValue}>{getIdpStatus(profile.nationality).convention}</Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricLabel}>Visa</Text>
-            <Text style={styles.metricValue}>
-              {getVisaFreeDays(profile.nationality) > 0 ? `${getVisaFreeDays(profile.nationality)} days` : "Required"}
-            </Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricLabel}>Drone</Text>
-            <Text style={styles.metricValue}>
-              {profile.has_drone ? `${DRONE_WEIGHTS[profile.drone_model]?.weight || "?"}g` : "None"}
+        </View>
+
+        <View style={styles.statusFooter}>
+          <View style={[styles.footerSignal, latestState === "safe" && styles.footerSignalSafe]}>
+            <Ionicons name="shield-checkmark-outline" size={16} color={mobileTheme.colors.primary} />
+            <Text style={styles.footerText}>
+              Latest status: {latestState === "safe" ? "Verified Safe" : latestState === "warning" ? "Restricted" : latestState === "restricted" ? "High Risk" : "Uncertain"}
             </Text>
           </View>
         </View>
-      </View>
-    </ScreenSurface>
+      </ScreenSurface>
+
+      <PrimarySafetyFab
+        onPrimaryPress={() => router.push("/(tabs)/chat")}
+        onScanPress={() => router.push({ pathname: "/(tabs)/chat", params: { entry: "scan" } })}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  heroCard: {
-    backgroundColor: mobileTheme.colors.surfaceStrong,
-    borderRadius: 26,
-    padding: 20,
-    gap: 8,
+  screen: {
+    flex: 1,
   },
-  heroEyebrow: {
-    color: "#E7C79B",
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.9,
+  topBarActions: {
+    position: "absolute",
+    top: 18,
+    right: 20,
+    flexDirection: "row",
+    gap: 10,
+    zIndex: 20,
   },
-  heroTitle: {
-    color: mobileTheme.colors.textOnDark,
-    fontFamily: mobileTheme.fonts.display,
-    fontSize: 24,
-    lineHeight: 31,
-    fontWeight: "700",
-  },
-  heroBody: {
-    color: "rgba(248, 244, 236, 0.76)",
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    lineHeight: 22,
+  headerAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFFE8",
+    borderWidth: 1,
+    borderColor: mobileTheme.colors.line,
+    alignItems: "center",
+    justifyContent: "center",
   },
   sectionCard: {
     backgroundColor: mobileTheme.colors.surface,
@@ -266,117 +200,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: mobileTheme.colors.line,
     padding: 18,
-    gap: 12,
+    gap: 14,
   },
-  intentGrid: {
+  statusStack: {
     gap: 10,
   },
-  intentCard: {
-    backgroundColor: mobileTheme.colors.primarySoft,
-    borderRadius: 18,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  intentText: {
-    flex: 1,
-    color: mobileTheme.colors.primary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  signalList: {
-    gap: 12,
-  },
-  signalRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  signalIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  signalCopy: {
-    flex: 1,
-    gap: 4,
-  },
-  signalTitle: {
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  signalDetail: {
-    color: mobileTheme.colors.textSecondary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  profileGrid: {
+  categoryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: 12,
   },
-  metricCard: {
-    width: "48%",
-    backgroundColor: mobileTheme.colors.surfaceAlt,
-    borderRadius: 18,
-    padding: 14,
-    gap: 6,
+  statusFooter: {
+    paddingBottom: 82,
   },
-  metricLabel: {
-    color: mobileTheme.colors.textSecondary,
+  footerSignal: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: mobileTheme.colors.primarySoft,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  footerSignalSafe: {
+    backgroundColor: mobileTheme.colors.successSoft,
+  },
+  footerText: {
+    color: mobileTheme.colors.textPrimary,
     fontFamily: mobileTheme.fonts.body,
     fontSize: 12,
     fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-  },
-  metricValue: {
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 15,
-    fontWeight: "700",
-    lineHeight: 20,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  emptyTitle: {
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.display,
-    fontSize: 28,
-    fontWeight: "700",
-  },
-  emptyBody: {
-    color: mobileTheme.colors.textSecondary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: "center",
-    maxWidth: 300,
-  },
-  primaryButton: {
-    backgroundColor: mobileTheme.colors.surfaceStrong,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderRadius: 999,
-    marginTop: 6,
-  },
-  primaryButtonText: {
-    color: mobileTheme.colors.textOnDark,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
   },
 });
