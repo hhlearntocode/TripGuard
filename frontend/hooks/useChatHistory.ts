@@ -29,6 +29,13 @@ export interface ChatThreadSummary {
   message_count: number;
 }
 
+export interface ChatHistoryEntry {
+  id: string;
+  query: string;
+  preview: string;
+  created_at: string;
+}
+
 function makeId(prefix = "id"): string {
   return `${prefix}-${Date.now().toString()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -202,5 +209,35 @@ export async function loadChatThreadSummaries(): Promise<ChatThreadSummary[]> {
       updated_at: thread.updated_at,
       message_count: thread.messages.length,
     };
+  });
+}
+
+export async function loadChatHistory(): Promise<ChatHistoryEntry[]> {
+  const threads = await loadChatThreads();
+
+  return threads.flatMap((thread) => {
+    const entries: ChatHistoryEntry[] = [];
+
+    for (let i = thread.messages.length - 1; i >= 0; i -= 1) {
+      const current = thread.messages[i];
+      if (current.role !== "assistant") continue;
+
+      let query = thread.title || "Scenario";
+      for (let j = i - 1; j >= 0; j -= 1) {
+        if (thread.messages[j].role === "user") {
+          query = thread.messages[j].content;
+          break;
+        }
+      }
+
+      entries.push({
+        id: current.id,
+        query,
+        preview: current.content.slice(0, 120) || "Saved response",
+        created_at: current.created_at,
+      });
+    }
+
+    return entries;
   });
 }

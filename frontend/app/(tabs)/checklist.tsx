@@ -8,13 +8,31 @@ import StatusSummaryBlock from "@/components/ui/StatusSummaryBlock";
 import RiskCategoryTile from "@/components/ui/RiskCategoryTile";
 import PrimarySafetyFab from "@/components/ui/PrimarySafetyFab";
 import SectionHeader from "@/components/ui/SectionHeader";
-import { loadChatHistory, ChatHistoryEntry } from "@/hooks/useChatHistory";
+import { ChatThread, loadChatThreads } from "@/hooks/useChatHistory";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
-import { deriveLegalityState } from "@/features/flows";
+import { deriveLegalityState, LegalityUiState } from "@/features/flows";
 import { mobileTheme } from "@/theme/mobileTheme";
 
 const FALLBACK_QUERY = "Can I fly a drone near a temple?";
-const FALLBACK_PREVIEW = "⚠️ Restricted. Cultural and religious sites often carry additional sensitivity and enforcement risk. Verify local restrictions and keep distance before flying.";
+const FALLBACK_PREVIEW = "Restricted. Cultural and religious sites often carry additional sensitivity and enforcement risk. Verify local restrictions and keep distance before flying.";
+
+const PRODUCT_PILLARS = [
+  {
+    title: "Concise legal answers",
+    body: "Ask one scenario and get a clear posture before you act.",
+    icon: "chatbubble-ellipses-outline" as const,
+  },
+  {
+    title: "Profile-aware readiness",
+    body: "Nationality, visa posture, and travel gear reshape the answer.",
+    icon: "compass-outline" as const,
+  },
+  {
+    title: "Emergency fallback",
+    body: "When the issue is no longer theoretical, TripGuard shifts to immediate steps.",
+    icon: "flash-outline" as const,
+  },
+];
 
 const CATEGORY_ITEMS = [
   {
@@ -49,38 +67,118 @@ const CATEGORY_ITEMS = [
   },
 ];
 
+const VALUE_POINTS = [
+  {
+    title: "Source-grounded",
+    body: "Answers are framed as legal information, not confident guesswork.",
+  },
+  {
+    title: "Profile-aware",
+    body: "The dashboard stays useful because it remembers who is traveling and with what constraints.",
+  },
+  {
+    title: "Emergency-ready",
+    body: "TripGuard can move from caution to action without changing tone or product surface.",
+  },
+];
+
+interface LatestAssessment {
+  chatId: string | null;
+  question: string;
+  preview: string;
+  state: LegalityUiState;
+}
+
+function deriveLatestAssessment(threads: ChatThread[]): LatestAssessment {
+  const latestThread = threads[0];
+  if (!latestThread) {
+    return {
+      chatId: null,
+      question: FALLBACK_QUERY,
+      preview: FALLBACK_PREVIEW,
+      state: deriveLegalityState(FALLBACK_PREVIEW),
+    };
+  }
+
+  const lastAssistantIndex = [...latestThread.messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find((entry) => entry.message.role === "assistant")?.index;
+
+  if (lastAssistantIndex === undefined) {
+    return {
+      chatId: latestThread.chat_id,
+      question: latestThread.title || FALLBACK_QUERY,
+      preview: FALLBACK_PREVIEW,
+      state: deriveLegalityState(FALLBACK_PREVIEW),
+    };
+  }
+
+  let question = latestThread.title || FALLBACK_QUERY;
+  for (let i = lastAssistantIndex - 1; i >= 0; i -= 1) {
+    if (latestThread.messages[i].role === "user") {
+      question = latestThread.messages[i].content;
+      break;
+    }
+  }
+
+  const preview = latestThread.messages[lastAssistantIndex].content || FALLBACK_PREVIEW;
+  return {
+    chatId: latestThread.chat_id,
+    question,
+    preview,
+    state:
+      (latestThread.messages[lastAssistantIndex].state as LegalityUiState | undefined) ||
+      deriveLegalityState(preview),
+  };
+}
+
 export default function TravelSafetyScreen() {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [latestEntry, setLatestEntry] = useState<ChatHistoryEntry | null>(null);
+  const [latestAssessment, setLatestAssessment] = useState<LatestAssessment>(() => ({
+    chatId: null,
+    question: FALLBACK_QUERY,
+    preview: FALLBACK_PREVIEW,
+    state: deriveLegalityState(FALLBACK_PREVIEW),
+  }));
 
   useEffect(() => {
     loadUserProfile().then(setProfile);
-    loadChatHistory().then((entries) => setLatestEntry(entries[0] || null));
+    loadChatThreads().then((threads) => setLatestAssessment(deriveLatestAssessment(threads)));
   }, []);
 
-  const question = latestEntry?.query || FALLBACK_QUERY;
-  const preview = latestEntry?.preview || FALLBACK_PREVIEW;
-  const latestState = useMemo(() => deriveLegalityState(preview), [preview]);
-
-  const allowedText = profile
-    ? `${profile.nationality} profile loaded. Use this for low-risk checks and simple confirmations.`
-    : "Use this when you expect the action to be routine, but still want confirmation first.";
-
-  const restrictedText = latestState === "warning" || latestState === "restricted"
-    ? "Recent checks suggest some actions need conditions, permits, or location awareness."
-    : "TripGuard will classify borderline cases here before they become a mistake.";
+  const restrictedText =
+    latestAssessment.state === "warning" || latestAssessment.state === "restricted"
+      ? "Recent checks suggest permits, location limits, or traveler-specific conditions."
+      : "TripGuard narrows the border cases before they become a mistake at the checkpoint.";
 
   const riskText = profile?.has_drone
-    ? "Drone travel, controlled zones, and customs scenarios deserve immediate caution."
+    ? "Drone travel, controlled zones, and customs scenarios should default to caution."
     : "Drug, customs, and restricted-zone scenarios should always be treated as high risk.";
+
+  const allowedText = profile
+    ? `${profile.nationality} profile loaded. Routine actions can be checked quickly without rebuilding context.`
+    : "Low-risk questions belong here when you want confirmation before moving.";
+
+  const latestStatusLabel = useMemo(() => {
+    switch (latestAssessment.state) {
+      case "safe":
+        return "Verified Safe";
+      case "warning":
+        return "Restricted";
+      case "restricted":
+        return "High Risk";
+      case "checking":
+        return "Checking";
+      default:
+        return "Uncertain";
+    }
+  }, [latestAssessment.state]);
 
   return (
     <View style={styles.screen}>
-      <ScreenSurface
-        title="Travel Safety"
-        subtitle="Clear legality signals before you act."
-      >
+      <ScreenSurface title="Travel Safety" subtitle="Clear legality signals before you act.">
         <View style={styles.topBarActions}>
           <TouchableOpacity
             accessibilityRole="button"
@@ -101,46 +199,46 @@ export default function TravelSafetyScreen() {
         </View>
 
         <SafetyQuestionCard
-          question={question}
-          preview={preview}
-          detail="TripGuard stores the latest assessed scenario here so the user can resume a safety decision without reconstructing context."
-          onReview={() => router.push({ pathname: "/(tabs)/chat", params: { query: question } })}
+          question={latestAssessment.question}
+          preview={latestAssessment.preview}
+          detail="TripGuard keeps the latest verified scenario here so the next decision starts from context, not memory."
+          onReview={() =>
+            router.push({
+              pathname: "/(tabs)/chat",
+              params: latestAssessment.chatId
+                ? { chat_id: latestAssessment.chatId, query: latestAssessment.question }
+                : { query: latestAssessment.question },
+            })
+          }
         />
 
         <View style={styles.sectionCard}>
           <SectionHeader
-            eyebrow="Status overview"
-            title="Three immediate legal postures"
-            detail="These replace generic watchlist cards with faster decision labels."
+            eyebrow="Capability"
+            title="What the product does before uncertainty gets expensive"
+            detail="This follows the same logic as the web landing: orient first, then narrow the decision."
           />
-          <View style={styles.statusStack}>
-            <StatusSummaryBlock
-              title="Allowed"
-              tone="safe"
-              body={allowedText}
-              detail="TripGuard still expects the user to verify the exact scenario before acting. Allowed does not mean unreviewed."
-            />
-            <StatusSummaryBlock
-              title="Restricted"
-              tone="warning"
-              body={restrictedText}
-              detail="Restricted scenarios usually need permit checks, location checks, or traveler-specific conditions."
-            />
-            <StatusSummaryBlock
-              title="High Risk"
-              tone="danger"
-              body={riskText}
-              detail="High-risk categories should push the user toward explicit scenario review or emergency guidance, not casual exploration."
-            />
-          </View>
-        </View>
 
-        <View style={styles.sectionCard}>
+          <View style={styles.pillarGrid}>
+            {PRODUCT_PILLARS.map((item) => (
+              <View key={item.title} style={styles.pillarCard}>
+                <View style={styles.pillarIcon}>
+                  <Ionicons name={item.icon} size={18} color={mobileTheme.colors.primary} />
+                </View>
+                <Text style={styles.pillarTitle}>{item.title}</Text>
+                <Text style={styles.pillarBody}>{item.body}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.sectionDivider} />
+
           <SectionHeader
-            eyebrow="Legal categories"
+            eyebrow="Categories"
             title="Tap the area that feels uncertain"
-            detail="Each category opens a prefilled legality question to reduce friction under stress."
+            detail="These shortcuts route into the current chat engine without adding any new chat behavior."
           />
+
           <View style={styles.categoryGrid}>
             {CATEGORY_ITEMS.map((item) => (
               <RiskCategoryTile
@@ -154,19 +252,67 @@ export default function TravelSafetyScreen() {
           </View>
         </View>
 
-        <View style={styles.statusFooter}>
-          <View style={[styles.footerSignal, latestState === "safe" && styles.footerSignalSafe]}>
-            <Ionicons name="shield-checkmark-outline" size={16} color={mobileTheme.colors.primary} />
-            <Text style={styles.footerText}>
-              Latest status: {latestState === "safe" ? "Verified Safe" : latestState === "warning" ? "Restricted" : latestState === "restricted" ? "High Risk" : "Uncertain"}
-            </Text>
+        <View style={styles.sectionCard}>
+          <SectionHeader
+            eyebrow="Risk framing"
+            title="A mistake is rarely small"
+            detail="These three postures mirror the web story section in a mobile decision format."
+          />
+          <View style={styles.statusStack}>
+            <StatusSummaryBlock
+              title="Allowed"
+              tone="safe"
+              body={allowedText}
+              detail="Allowed still means scenario-specific verification. It is a posture, not a blanket permission."
+            />
+            <StatusSummaryBlock
+              title="Restricted"
+              tone="warning"
+              body={restrictedText}
+              detail="Restricted scenarios usually need permit checks, location checks, or traveler-specific conditions."
+            />
+            <StatusSummaryBlock
+              title="High Risk"
+              tone="danger"
+              body={riskText}
+              detail="High-risk categories should move the user toward explicit review or emergency guidance, not casual exploration."
+            />
+          </View>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <SectionHeader
+            eyebrow="Trust model"
+            title="The same promise, compressed for mobile"
+            detail="The app borrows the web’s trust logic without copying the web surface directly."
+          />
+
+          <View style={styles.valueGrid}>
+            {VALUE_POINTS.map((item) => (
+              <View key={item.title} style={styles.valueCard}>
+                <Text style={styles.valueTitle}>{item.title}</Text>
+                <Text style={styles.valueBody}>{item.body}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.footerSignalWrap}>
+            <View style={[styles.footerSignal, latestAssessment.state === "safe" && styles.footerSignalSafe]}>
+              <Ionicons name="shield-checkmark-outline" size={16} color={mobileTheme.colors.primary} />
+              <Text style={styles.footerText}>Latest status: {latestStatusLabel}</Text>
+            </View>
           </View>
         </View>
       </ScreenSurface>
 
       <PrimarySafetyFab
         onPrimaryPress={() => router.push("/(tabs)/chat")}
-        onScanPress={() => router.push({ pathname: "/(tabs)/chat", params: { entry: "scan" } })}
+        onScanPress={() =>
+          router.push({
+            pathname: "/(tabs)/chat",
+            params: { query: "I photographed a sign or notice in Vietnam. What does it mean?" },
+          })
+        }
       />
     </View>
   );
@@ -206,6 +352,41 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 5,
   },
+  pillarGrid: {
+    gap: 12,
+  },
+  pillarCard: {
+    borderRadius: 20,
+    backgroundColor: "#FFF8FB",
+    borderWidth: 1,
+    borderColor: "#F7DEE8",
+    padding: 16,
+    gap: 8,
+  },
+  pillarIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#E9EEFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pillarTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  pillarBody: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: "rgba(16, 36, 59, 0.08)",
+  },
   statusStack: {
     gap: 10,
   },
@@ -214,7 +395,31 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 12,
   },
-  statusFooter: {
+  valueGrid: {
+    gap: 12,
+  },
+  valueCard: {
+    borderRadius: 20,
+    backgroundColor: "#F7F2EC",
+    borderWidth: 1,
+    borderColor: "#E7DCCF",
+    padding: 16,
+    gap: 6,
+  },
+  valueTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  valueBody: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  footerSignalWrap: {
+    paddingTop: 2,
     paddingBottom: 82,
   },
   footerSignal: {
