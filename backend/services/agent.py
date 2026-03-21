@@ -94,10 +94,11 @@ STEP 1 — Retrieve from law database (ALWAYS):
   Call retrieve_law regardless of whether you think you already know the answer.
   For multi-domain questions (drone + traffic, customs + drug) call it once per domain.
 
-STEP 2 — Web search (ALWAYS, every question, no exceptions):
-  You MUST call web_search for every legal question — even if the database returned results.
-  Reason: the user deserves the most current, official sources, not just cached corpus data.
-  Write queries in Vietnamese to reach official government sources:
+STEP 2 — Web search (fallback only):
+  Call web_search ONLY if retrieve_law returned fewer than 2 relevant chunks,
+  OR the question requires real-time data (new decrees, exchange rates, no-fly zone updates).
+  Do NOT call web_search if retrieve_law already returned clear, specific provisions.
+  When needed, write queries in Vietnamese for official sources:
   - Traffic:    "quy định xử phạt giao thông [vi phạm] 2024 site:thuvienphapluat.vn"
   - Drone/UAV:  "quy định bay flycam drone Việt Nam 2025 site:thuvienphapluat.vn"
   - Customs:    "quy định nhập khẩu [mặt hàng] vào Việt Nam site:thuvienphapluat.vn"
@@ -106,9 +107,8 @@ STEP 2 — Web search (ALWAYS, every question, no exceptions):
   - Heritage:   "quy định bảo vệ di sản văn hóa Việt Nam site:thuvienphapluat.vn"
   Trusted source priority: thuvienphapluat.vn > vbpl.vn > chinhphu.vn > moj.gov.vn
 
-STEP 3 — Scrape (ALWAYS, after web search):
-  Scrape the highest-ranked trusted URL from the web search results to get the full legal text.
-  This ensures your answer is based on the actual law, not summaries.
+STEP 3 — Scrape (fallback only, after web search):
+  Only if web_search was called: scrape the highest-ranked trusted URL to get the full legal text.
 
 STEP 4 — Fine lookup (ALWAYS when any penalty is relevant):
   Call lookup_fine for every question involving a penalty. Use the exact figure returned.
@@ -353,7 +353,7 @@ async def run_agent(
     user_message: str,
     user_profile: dict,
     conversation_history: list[dict] = None,
-    max_steps: int = 6,
+    max_steps: int = 5,
     on_event=None,
 ) -> dict:
     from backend.services.llm_adapter import get_adapter
@@ -406,6 +406,7 @@ async def run_agent(
             ],
         })
 
+        # Emit all tool_start events immediately so the UI updates before execution begins
         for tc in response["tool_calls"]:
             if on_event:
                 event: dict = {"type": "tool_start", "tool": tc["name"]}
@@ -414,9 +415,15 @@ async def run_agent(
                 elif tc["name"] == "web_search":
                     event["query"] = tc["arguments"].get("query", "")
                 on_event(event)
-            # Run blocking tool in a thread — this await point lets the event loop flush
-            # the "tool_start" SSE event to the client BEFORE the tool actually runs
-            result = await asyncio.to_thread(execute_tool, tc["name"], tc["arguments"])
+
+        # Run all tools in parallel — significant speedup when LLM calls multiple tools at once
+        # (e.g. retrieve_law for traffic + retrieve_law for drone in a single step)
+        results = await asyncio.gather(*[
+            asyncio.to_thread(execute_tool, tc["name"], tc["arguments"])
+            for tc in response["tool_calls"]
+        ])
+
+        for tc, result in zip(response["tool_calls"], results):
             tools_used.append({"tool": tc["name"], "args": tc["arguments"]})
             steps_log.append(f"Step {step+1}: {tc['name']} → {str(result)[:120]}...")
             logger.info("[Step %d] %s(%s) → %s",
@@ -429,7 +436,6 @@ async def run_agent(
                 if url and url not in sources:
                     sources.append(url)
             elif tc["name"] == "web_search":
-                # Parse URLs from formatted web_search result text
                 for line in result.splitlines():
                     if line.strip().startswith("URL:"):
                         url = line.split("URL:", 1)[-1].strip()
