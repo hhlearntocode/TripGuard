@@ -77,23 +77,6 @@ function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
                 <Text style={answerStyles.sourceLabel}>Source: </Text>
                 {ref}
               </Text>
-              {urlSources.length > 0 && (
-                <View style={answerStyles.chips}>
-                  {urlSources.slice(0, 3).map((url, j) => {
-                    const domain = url.replace(/^https?:\/\//, "").split("/")[0];
-                    return (
-                      <TouchableOpacity
-                        key={j}
-                        style={answerStyles.chip}
-                        onPress={() => Linking.openURL(url)}
-                      >
-                        <Text style={answerStyles.chipText} numberOfLines={1}>{domain}</Text>
-                        <Ionicons name="open-outline" size={10} color={mobileTheme.colors.primary} />
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
             </View>
           );
         }
@@ -103,6 +86,30 @@ function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
           </Text>
         );
       })}
+
+      {urlSources.length > 0 && (
+        <View style={answerStyles.refsBlock}>
+          <Text style={answerStyles.refsLabel}>References</Text>
+          {urlSources.map((url, i) => {
+            const domain = url.replace(/^https?:\/\//, "").split("/")[0];
+            const path = url.replace(/^https?:\/\/[^/]+/, "").slice(0, 48) || "/";
+            return (
+              <TouchableOpacity
+                key={i}
+                style={answerStyles.refRow}
+                onPress={() => Linking.openURL(url)}
+              >
+                <Ionicons name="link-outline" size={12} color={mobileTheme.colors.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={answerStyles.refDomain}>{domain}</Text>
+                  <Text style={answerStyles.refPath} numberOfLines={1}>{path}</Text>
+                </View>
+                <Ionicons name="open-outline" size={12} color={mobileTheme.colors.textSecondary} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -128,27 +135,38 @@ const answerStyles = StyleSheet.create({
     fontWeight: "700",
     color: mobileTheme.colors.textPrimary,
   },
-  chips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  refsBlock: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(99,102,241,0.15)",
     gap: 6,
   },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: mobileTheme.colors.primarySoft,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: "rgba(99,102,241,0.18)",
-  },
-  chipText: {
+  refsLabel: {
     fontFamily: mobileTheme.fonts.body,
     fontSize: 11,
+    fontWeight: "700",
+    color: mobileTheme.colors.textSecondary,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  refRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    paddingVertical: 3,
+  },
+  refDomain: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    fontWeight: "600",
     color: mobileTheme.colors.primary,
-    maxWidth: 180,
+  },
+  refPath: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    color: mobileTheme.colors.textSecondary,
   },
 });
 
@@ -307,16 +325,22 @@ export default function ChatScreen() {
         attachments.map(async (a, i) => {
           if (!a.base64) return `- Image ${i + 1}: attached (analysis unavailable).`;
           try {
-            const visionResp = await fetch(`${API_URL}/api/vision`, {
+            const visionResp = await fetch(`${API_URL}/api/vision/analyze`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ image_b64: a.base64 }),
             });
-            const sign = await visionResp.json();
-            if (sign?.code) {
-              return `[Traffic sign in photo: ${sign.code} — "${sign.name}" — category:${sign.category ?? "unknown"}]`;
+            const result = await visionResp.json();
+
+            if (result?.type === "sign" && result.code) {
+              return `[Traffic sign in photo: ${result.code} — "${result.name}" — category:${result.category ?? "unknown"}]`;
             }
-            return `- Image ${i + 1}: not recognized as a Vietnamese traffic sign.`;
+
+            if (result?.type === "object" && result.description) {
+              return `[Image content: ${result.description}${result.law_relevance ? ` — domain:${result.law_relevance}` : ""}]`;
+            }
+
+            return `- Image ${i + 1}: could not identify content.`;
           } catch {
             return `- Image ${i + 1}: could not analyze image.`;
           }

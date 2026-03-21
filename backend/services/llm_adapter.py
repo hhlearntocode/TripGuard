@@ -11,7 +11,7 @@ class LLMAdapter(ABC):
 
 
 class OpenRouterAdapter(LLMAdapter):
-    def __init__(self, model="qwen/qwen-2.5-72b-instruct"):
+    def __init__(self, model="qwen/qwen3-vl-32b-instruct"):
         from openai import OpenAI
         self.client = OpenAI(
             api_key=os.environ["OPENROUTER_API_KEY"],
@@ -62,5 +62,5 @@ def get_adapter() -> LLMAdapter:
     """Switch provider via LLM_PROVIDER env var — no code changes needed."""
     provider = os.getenv("LLM_PROVIDER", "ollama")
     if provider == "openrouter":
-        return OpenRouterAdapter(os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-72b-instruct"))
+        return OpenRouterAdapter(os.getenv("OPENROUTER_MODEL", "qwen/qwen3-vl-32b-instruct"))
     return OllamaAdapter()
