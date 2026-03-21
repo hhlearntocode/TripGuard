@@ -358,7 +358,7 @@ export default function ChatScreen() {
       >
         <View style={styles.chatRoot}>
           {isWideLayout ? (
-            <View style={[styles.wideLayout, { paddingBottom: composerHeight + 24 }]}>
+            <View style={[styles.wideLayout, { paddingBottom: composerHeight + 12 }]}>
               <View style={[styles.leftPane, isAssessmentCollapsed && styles.leftPaneExpanded]}>
                 <View style={styles.topActionsRow}>
                   <TouchableOpacity
@@ -491,7 +491,7 @@ export default function ChatScreen() {
               )}
             </View>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.screenContent, { paddingBottom: composerHeight + 24 }]}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.screenContent, { paddingBottom: composerHeight + 12 }]}>
               <View style={[styles.sectionCard, styles.conversationCardNarrow]}>
                 <ScrollView
                   ref={conversationScrollRef}
