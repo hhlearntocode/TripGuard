@@ -6,6 +6,7 @@ import {
   Linking,
   NativeSyntheticEvent,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,10 +16,13 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { BlurView } from "expo-blur";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
+import Markdown from "react-native-markdown-display";
 import { useLocalSearchParams } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
+import { useVoiceChatRecorder } from "@/hooks/useVoiceChatRecorder";
 import {
   appendMessageToThread,
   ChatThreadMessage,
@@ -62,30 +66,21 @@ interface PendingAttachment {
   base64?: string;
 }
 
+type MessageOrigin = "typed" | "voice";
+
 function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
   const urlSources = (sources ?? []).filter((s) => s.startsWith("http"));
-  const lines = text.split("\n");
   return (
     <View style={{ gap: 0 }}>
-      {lines.map((line, i) => {
-        const isSourceLine = /^Source:/i.test(line.trim());
-        if (isSourceLine) {
-          const ref = line.replace(/^Source:\s*/i, "").trim();
-          return (
-            <View key={i} style={answerStyles.sourceRow}>
-              <Text style={answerStyles.sourceRef}>
-                <Text style={answerStyles.sourceLabel}>Source: </Text>
-                {ref}
-              </Text>
-            </View>
-          );
-        }
-        return (
-          <Text key={i} style={answerStyles.line}>
-            {line}
-          </Text>
-        );
-      })}
+      <Markdown
+        style={markdownStyles}
+        onLinkPress={(url) => {
+          void Linking.openURL(url);
+          return false;
+        }}
+      >
+        {text}
+      </Markdown>
 
       {urlSources.length > 0 && (
         <View style={answerStyles.refsBlock}>
@@ -114,27 +109,21 @@ function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
   );
 }
 
+function AssessmentText({ text }: { text: string }) {
+  return (
+    <Markdown
+      style={assessmentMarkdownStyles}
+      onLinkPress={(url) => {
+        void Linking.openURL(url);
+        return false;
+      }}
+    >
+      {text}
+    </Markdown>
+  );
+}
+
 const answerStyles = StyleSheet.create({
-  line: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    color: mobileTheme.colors.textPrimary,
-    lineHeight: 21,
-  },
-  sourceRow: {
-    marginTop: 6,
-    gap: 6,
-  },
-  sourceRef: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 12,
-    color: mobileTheme.colors.textSecondary,
-    lineHeight: 18,
-  },
-  sourceLabel: {
-    fontWeight: "700",
-    color: mobileTheme.colors.textPrimary,
-  },
   refsBlock: {
     marginTop: 12,
     paddingTop: 10,
@@ -170,6 +159,241 @@ const answerStyles = StyleSheet.create({
   },
 });
 
+const markdownStyles = StyleSheet.create({
+  body: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  text: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 10,
+  },
+  heading1: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 22,
+    lineHeight: 28,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  heading2: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 18,
+    lineHeight: 24,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  heading3: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 16,
+    lineHeight: 22,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  strong: {
+    color: mobileTheme.colors.textPrimary,
+    fontWeight: "700",
+  },
+  em: {
+    color: mobileTheme.colors.textSecondary,
+    fontStyle: "italic",
+  },
+  bullet_list: {
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  ordered_list: {
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  list_item: {
+    marginBottom: 6,
+  },
+  bullet_list_icon: {
+    color: mobileTheme.colors.primary,
+    marginRight: 6,
+  },
+  bullet_list_content: {
+    flex: 1,
+  },
+  ordered_list_icon: {
+    color: mobileTheme.colors.primary,
+    marginRight: 6,
+  },
+  ordered_list_content: {
+    flex: 1,
+  },
+  blockquote: {
+    borderLeftWidth: 3,
+    borderLeftColor: mobileTheme.colors.line,
+    paddingLeft: 10,
+    marginVertical: 8,
+    opacity: 0.92,
+  },
+  code_inline: {
+    backgroundColor: mobileTheme.colors.surfaceMuted,
+    color: mobileTheme.colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 13,
+  },
+  code_block: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+    color: mobileTheme.colors.textOnDark,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 8,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  fence: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+    color: mobileTheme.colors.textOnDark,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 8,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  hr: {
+    backgroundColor: mobileTheme.colors.line,
+    height: 1,
+    marginVertical: 12,
+  },
+  link: {
+    color: mobileTheme.colors.primary,
+    textDecorationLine: "underline",
+  },
+});
+
+const assessmentMarkdownStyles = StyleSheet.create({
+  body: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  text: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 8,
+  },
+  heading1: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 18,
+    lineHeight: 24,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  heading2: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 16,
+    lineHeight: 22,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  heading3: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 15,
+    lineHeight: 21,
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  strong: {
+    color: mobileTheme.colors.textPrimary,
+    fontWeight: "700",
+  },
+  em: {
+    color: mobileTheme.colors.textSecondary,
+    fontStyle: "italic",
+  },
+  bullet_list: {
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  ordered_list: {
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  list_item: {
+    marginBottom: 4,
+  },
+  bullet_list_icon: {
+    color: mobileTheme.colors.primary,
+    marginRight: 6,
+  },
+  ordered_list_icon: {
+    color: mobileTheme.colors.primary,
+    marginRight: 6,
+  },
+  blockquote: {
+    borderLeftWidth: 3,
+    borderLeftColor: mobileTheme.colors.line,
+    paddingLeft: 10,
+    marginVertical: 6,
+  },
+  code_inline: {
+    backgroundColor: mobileTheme.colors.surfaceMuted,
+    color: mobileTheme.colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 13,
+  },
+  code_block: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+    color: mobileTheme.colors.textOnDark,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 8,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  fence: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+    color: mobileTheme.colors.textOnDark,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 8,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  link: {
+    color: mobileTheme.colors.primary,
+    textDecorationLine: "underline",
+  },
+});
+
+async function readErrorDetail(response: Response, fallback: string) {
+  try {
+    const data = await response.json();
+    if (typeof data?.detail === "string") return data.detail;
+    if (typeof data?.message === "string") return data.message;
+  } catch {
+    // Ignore parse failures and use the fallback.
+  }
+  return fallback;
+}
+
 export default function ChatScreen() {
   const params = useLocalSearchParams<{ query?: string; chat_id?: string }>();
   const { width } = useWindowDimensions();
@@ -187,21 +411,75 @@ export default function ChatScreen() {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [composerHeight, setComposerHeight] = useState(188);
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
+  const [isProcessingVoiceInput, setIsProcessingVoiceInput] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [isQuickTrayHovered, setIsQuickTrayHovered] = useState(false);
   const conversationScrollRef = useRef<ScrollView | null>(null);
+  const draftBeforeRecordingRef = useRef("");
 
   const quickScenarios = useMemo(
     () => [
-      "Can I bring this into Vietnam?",
-      "Is this area restricted for foreigners?",
-      "What happens if I do this?",
-      "Can I ride here with my current license?",
+      "I bought a vape in Thailand—can I bring it into Vietnam through the airport?",
+      
+      "I'm near a military-looking area in Hanoi with warning signs—am I allowed to enter or take photos here as a foreigner?",
+      
+      "What happens if I accidentally overstay my visa in Vietnam by a few days?",
+      
+      "I have an international driving permit—can I legally ride a motorbike in Ho Chi Minh City?",
+      
+      "Can I fly a drone at this beach in Da Nang, or do I need permission first?",
+      
+      "Is it okay to take photos of police or government buildings in Vietnam?",
+      
+      "I was invited to drink at a local bar—what are the laws around alcohol limits if I plan to ride back?",
+      
+      "Can I carry prescription medication like sleeping pills into Vietnam without issues?",
     ],
     []
   );
+  
+  const fetchScribeToken = async () => {
+    const response = await fetch(`${API_URL}/api/voice/scribe-token`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorDetail(response, "Could not start voice capture."));
+    }
+
+    const data = await response.json();
+    if (!data?.token || typeof data.token !== "string") {
+      throw new Error("Voice token response was empty.");
+    }
+    return data.token;
+  };
+
+  const {
+    isSupported: isVoiceSupported,
+    isRecording,
+    isConnecting: isConnectingVoice,
+    liveTranscript,
+    voiceError: recorderVoiceError,
+    startRecording,
+    stopRecording,
+    clearVoiceError,
+    clearTranscript,
+  } = useVoiceChatRecorder(fetchScribeToken);
 
   useEffect(() => {
     loadUserProfile().then(setProfile);
   }, []);
+
+  useEffect(() => {
+    if (recorderVoiceError) {
+      setVoiceError(recorderVoiceError);
+    }
+  }, [recorderVoiceError]);
+
+  useEffect(() => {
+    if (Platform.OS === "web" && !isVoiceSupported) {
+      setVoiceError("Microphone input is not supported in this browser.");
+    }
+  }, [isVoiceSupported]);
 
   const formatDateTime = (iso: string) => {
     const d = new Date(iso);
@@ -303,7 +581,7 @@ export default function ChatScreen() {
     return logs.filter((item) => !dismissedAssessmentIds.includes(item.id));
   }, [messages, dismissedAssessmentIds]);
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, options: { origin?: MessageOrigin } = {}) => {
     if ((!text.trim() && attachments.length === 0) || isLoading || !profile || !threadReady) return;
 
     let threadId = activeChatId;
@@ -314,9 +592,13 @@ export default function ChatScreen() {
     }
 
     const typedQuery = text.trim();
+    const isVoiceTurn = options.origin === "voice";
     setUiState("checking");
     setInput("");
     setIsLoading(true);
+    if (isVoiceTurn) {
+      setVoiceError(null);
+    }
 
     const sentAttachments = [...attachments];
     let query = typedQuery || "I attached image(s). Please analyze what this means legally in Vietnam.";
@@ -483,7 +765,7 @@ export default function ChatScreen() {
     if (Platform.OS !== "web") return;
 
     (event as unknown as { preventDefault?: () => void }).preventDefault?.();
-    if ((input.trim() || attachments.length > 0) && !isLoading) {
+    if ((input.trim() || attachments.length > 0) && !isLoading && !isRecording && !isProcessingVoiceInput) {
       void sendMessage(input);
     }
   };
@@ -512,10 +794,52 @@ export default function ChatScreen() {
     ]);
   };
 
+  const handleVoiceToggle = async () => {
+    if (!isVoiceSupported || isLoading || !profile || !threadReady) return;
+
+    if (isRecording) {
+      setIsProcessingVoiceInput(true);
+      try {
+        const transcript = (await stopRecording()).trim();
+        clearVoiceError();
+        if (!transcript) {
+          setInput(draftBeforeRecordingRef.current);
+          setVoiceError("No speech was captured. Try speaking a bit closer to the mic.");
+          return;
+        }
+        setInput(transcript);
+        await sendMessage(transcript, { origin: "voice" });
+      } finally {
+        setIsProcessingVoiceInput(false);
+      }
+      return;
+    }
+
+    draftBeforeRecordingRef.current = input;
+    setVoiceError(null);
+    clearVoiceError();
+    clearTranscript();
+    await startRecording();
+  };
+
+  const composerInputValue = isRecording || isProcessingVoiceInput ? liveTranscript : input;
+  const isSendDisabled =
+    (!input.trim() && attachments.length === 0) || isLoading || isRecording || isProcessingVoiceInput;
+  const isMicDisabled =
+    !isVoiceSupported || isLoading || !profile || !threadReady || isConnectingVoice;
+  const isQuickTrayExpanded = Platform.OS !== "web" || isQuickTrayHovered;
+  const voiceStatusText = isConnectingVoice
+    ? "Starting microphone..."
+    : isRecording
+      ? "Listening in English..."
+      : isProcessingVoiceInput
+        ? "Finalizing transcript..."
+        : null;
+
   return (
     <ScreenSurface
       title="Legality Check"
-      subtitle={getLegalityTone(uiState)}
+      subtitle={voiceStatusText || getLegalityTone(uiState)}
       leftNode={<AppDashboardMenu />}
       rightNode={<StatusPill state={isLoading ? "checking" : uiState} />}
       scrollable={false}
@@ -656,7 +980,9 @@ export default function ChatScreen() {
                                 </TouchableOpacity>
                               </View>
                               <Text style={styles.resultQuery}>{item.query}</Text>
-                              <Text style={styles.resultAnswer}>{item.content}</Text>
+                              <View style={styles.resultAnswerWrap}>
+                                <AssessmentText text={item.content} />
+                              </View>
                               <Text style={styles.resultTime}>{formatDateTime(item.created_at)}</Text>
                             </View>
                           ))}
@@ -779,7 +1105,9 @@ export default function ChatScreen() {
                               </TouchableOpacity>
                             </View>
                             <Text style={styles.resultQuery}>{item.query}</Text>
-                            <Text style={styles.resultAnswer}>{item.content}</Text>
+                            <View style={styles.resultAnswerWrap}>
+                              <AssessmentText text={item.content} />
+                            </View>
                             <Text style={styles.resultTime}>{formatDateTime(item.created_at)}</Text>
                           </View>
                         ))}
@@ -820,41 +1148,124 @@ export default function ChatScreen() {
                 </ScrollView>
               )}
 
-              <View style={styles.quickRow}>
-                {quickScenarios.map((scenario) => (
-                  <TouchableOpacity
-                    key={scenario}
-                    style={styles.quickChip}
-                    onPress={() => setInput(scenario)}
-                  >
-                    <Text style={styles.quickChipText}>{scenario}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {Platform.OS === "web" ? (
+                <Pressable
+                  style={styles.quickTrayArea}
+                  onHoverIn={() => setIsQuickTrayHovered(true)}
+                  onHoverOut={() => setIsQuickTrayHovered(false)}
+                >
+                  <View style={styles.quickTrayTrigger}>
+                    <BlurView intensity={22} tint="light" style={styles.quickTrayTriggerBlur}>
+                      <View style={styles.quickTrayTriggerCopy}>
+                        <Text style={styles.quickTrayLabel}>Quick prompts</Text>
+                        <Text style={styles.quickTrayHint}>Move here to expand</Text>
+                      </View>
+                      <Ionicons
+                        name={isQuickTrayExpanded ? "chevron-up" : "sparkles-outline"}
+                        size={14}
+                        color={mobileTheme.colors.textSecondary}
+                      />
+                    </BlurView>
+                  </View>
+
+                  {isQuickTrayExpanded && (
+                    <View style={styles.quickTrayPopup}>
+                      <BlurView intensity={34} tint="light" style={styles.quickTrayPopupBlur}>
+                        <View style={styles.quickRow}>
+                          {quickScenarios.map((scenario) => (
+                            <TouchableOpacity
+                              key={scenario}
+                              style={styles.quickChip}
+                              onPress={() => {
+                                setInput(scenario);
+                                setIsQuickTrayHovered(false);
+                              }}
+                            >
+                              <Text style={styles.quickChipText}>{scenario}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </BlurView>
+                    </View>
+                  )}
+                </Pressable>
+              ) : (
+                <View style={styles.quickRow}>
+                  {quickScenarios.map((scenario) => (
+                    <TouchableOpacity
+                      key={scenario}
+                      style={styles.quickChip}
+                      onPress={() => setInput(scenario)}
+                    >
+                      <Text style={styles.quickChipText}>{scenario}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {(voiceStatusText || voiceError || (isRecording && liveTranscript)) && (
+                <View style={[styles.voiceCard, voiceError ? styles.voiceCardError : null]}>
+                  <View style={styles.voiceCardHeader}>
+                    <Text style={styles.voiceCardTitle}>{voiceError ? "Voice unavailable" : "Voice chat"}</Text>
+                    {!!voiceStatusText && <Text style={styles.voiceCardMeta}>{voiceStatusText}</Text>}
+                  </View>
+                  {!!voiceError && <Text style={styles.voiceCardErrorText}>{voiceError}</Text>}
+                  {!voiceError && !!liveTranscript && (
+                    <Text style={styles.voiceTranscriptText}>{liveTranscript}</Text>
+                  )}
+                </View>
+              )}
 
               <View style={styles.inputRow}>
-                <TouchableOpacity style={styles.iconBtn} onPress={pickImage} disabled={isLoading}>
+                <TouchableOpacity
+                  style={[styles.iconBtn, (isLoading || isRecording) && styles.iconBtnDisabled]}
+                  onPress={pickImage}
+                  disabled={isLoading || isRecording}
+                >
                   <Ionicons name="camera-outline" size={20} color={mobileTheme.colors.primary} />
                 </TouchableOpacity>
+                {Platform.OS === "web" && (
+                  <TouchableOpacity
+                    style={[
+                      styles.iconBtn,
+                      isRecording && styles.iconBtnActive,
+                      isMicDisabled && styles.iconBtnDisabled,
+                    ]}
+                    onPress={() => void handleVoiceToggle()}
+                    disabled={isMicDisabled}
+                    accessibilityLabel={isRecording ? "Stop voice recording" : "Start voice recording"}
+                  >
+                    <Ionicons
+                      name={isRecording ? "stop" : "mic-outline"}
+                      size={20}
+                      color={isRecording ? "#fff" : mobileTheme.colors.primary}
+                    />
+                  </TouchableOpacity>
+                )}
                 <TextInput
                   style={styles.input}
-                  value={input}
+                  value={composerInputValue}
                   onChangeText={setInput}
-                  placeholder="Example: Can I carry prescription medicine into Vietnam?"
+                  placeholder={
+                    isRecording
+                      ? "Listening in English..."
+                      : "Example: Can I carry prescription medicine into Vietnam?"
+                  }
                   placeholderTextColor="#8E7F6E"
                   multiline
                   maxLength={500}
                   returnKeyType="send"
                   onKeyPress={handleComposerKeyPress}
+                  editable={!isRecording && !isProcessingVoiceInput}
                   onSubmitEditing={() => sendMessage(input)}
                 />
                 <TouchableOpacity
                   style={[
                     styles.sendBtn,
-                    (!input.trim() && attachments.length === 0 || isLoading) && styles.sendBtnDisabled,
+                    isSendDisabled && styles.sendBtnDisabled,
                   ]}
                   onPress={() => sendMessage(input)}
-                  disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                  disabled={isSendDisabled}
                 >
                   <Ionicons name="arrow-forward" size={18} color="#fff" />
                 </TouchableOpacity>
@@ -1007,6 +1418,63 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
+  quickTrayArea: {
+    position: "relative",
+    zIndex: 20,
+    marginBottom: 2,
+  },
+  quickTrayTrigger: {
+    borderRadius: 999,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(16,36,59,0.08)",
+  },
+  quickTrayTriggerBlur: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "rgba(255,255,255,0.55)",
+  },
+  quickTrayTriggerCopy: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  quickTrayLabel: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  quickTrayHint: {
+    color: mobileTheme.colors.textSecondary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+  },
+  quickTrayPopup: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 34,
+    zIndex: 30,
+  },
+  quickTrayPopupBlur: {
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(16,36,59,0.08)",
+    backgroundColor: "rgba(255,255,255,0.76)",
+    padding: 12,
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
   quickChip: {
     backgroundColor: mobileTheme.colors.surfaceAlt,
     borderRadius: 999,
@@ -1018,6 +1486,51 @@ const styles = StyleSheet.create({
     fontFamily: mobileTheme.fonts.body,
     fontSize: 13,
     fontWeight: "500",
+  },
+  voiceCard: {
+    backgroundColor: mobileTheme.colors.primarySoft,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(30,58,138,0.14)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  voiceCardError: {
+    backgroundColor: "#FDECEC",
+    borderColor: "rgba(190,24,24,0.18)",
+  },
+  voiceCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+  },
+  voiceCardTitle: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  voiceCardMeta: {
+    color: mobileTheme.colors.primary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  voiceCardErrorText: {
+    color: "#991B1B",
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  voiceTranscriptText: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
   },
   inputRow: {
     flexDirection: "row",
@@ -1032,6 +1545,12 @@ const styles = StyleSheet.create({
     backgroundColor: mobileTheme.colors.primarySoft,
     justifyContent: "center",
     alignItems: "center",
+  },
+  iconBtnActive: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+  },
+  iconBtnDisabled: {
+    opacity: 0.52,
   },
   input: {
     flex: 1,
@@ -1133,11 +1652,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 22,
   },
-  resultAnswer: {
-    color: mobileTheme.colors.textSecondary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    lineHeight: 22,
+  resultAnswerWrap: {
+    minWidth: 0,
   },
   resultTime: {
     color: mobileTheme.colors.textSecondary,

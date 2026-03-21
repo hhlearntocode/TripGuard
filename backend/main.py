@@ -33,7 +33,9 @@ app.add_middleware(
 )
 
 from backend.routers import chat as chat_router
+from backend.routers import voice as voice_router
 app.include_router(chat_router.router)
+app.include_router(voice_router.router)
 
 
 @app.get("/health")

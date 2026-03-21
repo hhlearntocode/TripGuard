@@ -19,6 +19,7 @@ def test_health_endpoint(client):
 def test_chat_endpoint(client, sample_user_profile):
     mock_result = {
         "answer": "❌ Illegal — test answer.",
+        "sources": ["NĐ 168/2024/NĐ-CP Điều 5"],
         "steps": ["Step 1: retrieve_law → chunk..."],
         "tools_used": [{"tool": "retrieve_law", "args": {"query": "motorbike"}}],
     }
@@ -33,6 +34,7 @@ def test_chat_endpoint(client, sample_user_profile):
     assert resp.status_code == 200
     data = resp.json()
     assert "answer" in data
+    assert "sources" in data
     assert "debug" in data
     assert data["answer"] == "❌ Illegal — test answer."
     assert "steps" in data["debug"]
@@ -63,3 +65,24 @@ def test_vision_endpoint_no_sign(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["code"] is None
+
+
+def test_scribe_token_endpoint(client):
+    with patch("backend.routers.voice.create_single_use_token", new=AsyncMock(return_value="scribe-token")):
+        resp = client.post("/api/voice/scribe-token")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"token": "scribe-token"}
+
+
+def test_scribe_token_endpoint_missing_config(client):
+    from backend.services.elevenlabs_service import ElevenLabsConfigError
+
+    with patch(
+        "backend.routers.voice.create_single_use_token",
+        new=AsyncMock(side_effect=ElevenLabsConfigError("ELEVENLABS_API_KEY is not configured.")),
+    ):
+        resp = client.post("/api/voice/scribe-token")
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "ELEVENLABS_API_KEY is not configured."

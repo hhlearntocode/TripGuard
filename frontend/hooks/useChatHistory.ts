@@ -11,6 +11,8 @@ export interface ChatThreadMessage {
   content: string;
   state?: string;
   created_at: string;
+  attachments?: Array<{ uri: string }>;
+  sources?: string[];
 }
 
 export interface ChatThread {
@@ -74,7 +76,28 @@ async function loadRawThreads(): Promise<ChatThread[]> {
       return migrated;
     }
 
-    return (parsed as ChatThread[]).filter((thread) => !!thread.chat_id && Array.isArray(thread.messages));
+    return (parsed as ChatThread[])
+      .filter((thread) => !!thread.chat_id && Array.isArray(thread.messages))
+      .map((thread) => ({
+        ...thread,
+        messages: thread.messages
+          .filter((message) => !!message && (message.role === "user" || message.role === "assistant"))
+          .map((message) => {
+            const normalizedAttachments = Array.isArray(message.attachments)
+              ? message.attachments
+                  .filter((attachment) => !!attachment && typeof attachment.uri === "string")
+                  .map((attachment) => ({ uri: attachment.uri }))
+              : undefined;
+            const normalizedSources = Array.isArray(message.sources)
+              ? message.sources.filter((source) => typeof source === "string")
+              : undefined;
+            return {
+              ...message,
+              attachments: normalizedAttachments && normalizedAttachments.length > 0 ? normalizedAttachments : undefined,
+              sources: normalizedSources && normalizedSources.length > 0 ? normalizedSources : undefined,
+            };
+          }),
+      }));
   } catch {
     return [];
   }
@@ -122,6 +145,8 @@ export async function appendMessageToThread(
     content: message.content,
     state: message.state,
     created_at: message.created_at || new Date().toISOString(),
+    attachments: message.attachments?.filter((attachment) => !!attachment?.uri),
+    sources: message.sources?.filter((source) => typeof source === "string"),
   };
 
   const updated: ChatThread = {
