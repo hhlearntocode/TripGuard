@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -250,7 +251,7 @@ _TRUSTED_DOMAINS = [
 ]
 
 
-def _presearch_sign(
+async def _presearch_sign(
     sign_code: str,
     sign_name: str,
     sources: list,
@@ -266,7 +267,8 @@ def _presearch_sign(
 
     if on_event:
         on_event({"type": "tool_start", "tool": "web_search", "query": query})
-    search_result = execute_tool("web_search", {"query": query, "max_results": 5})
+    # Run blocking call in thread so the event loop can flush the SSE event above
+    search_result = await asyncio.to_thread(execute_tool, "web_search", {"query": query, "max_results": 5})
     tools_used.append({"tool": "web_search", "args": {"query": query}})
     steps_log.append(f"Pre-search web_search({sign_code}) → {str(search_result)[:120]}...")
 
@@ -292,7 +294,8 @@ def _presearch_sign(
         )
         if on_event:
             on_event({"type": "tool_start", "tool": "scrape_url", "url": best_url})
-        scrape_result = execute_tool("scrape_url", {"url": best_url, "goal": goal})
+        # Run blocking call in thread so the event loop can flush the SSE event above
+        scrape_result = await asyncio.to_thread(execute_tool, "scrape_url", {"url": best_url, "goal": goal})
         tools_used.append({"tool": "scrape_url", "args": {"url": best_url, "goal": goal}})
         steps_log.append(f"Pre-search scrape_url({best_url}) → {str(scrape_result)[:120]}...")
         if best_url not in sources:
@@ -344,7 +347,8 @@ async def run_agent(
     logger.info("=" * 70)
 
     for step in range(max_steps):
-        response = llm.chat_with_tools(messages, TOOL_SCHEMAS)
+        # Run blocking LLM call in a thread so the event loop stays free to flush SSE events
+        response = await asyncio.to_thread(llm.chat_with_tools, messages, TOOL_SCHEMAS)
         logger.info("[Step %d] tool_calls: %s", step + 1,
                     [tc["name"] for tc in response["tool_calls"]] if response["tool_calls"] else "none")
 
@@ -372,7 +376,9 @@ async def run_agent(
                 elif tc["name"] == "web_search":
                     event["query"] = tc["arguments"].get("query", "")
                 on_event(event)
-            result = execute_tool(tc["name"], tc["arguments"])
+            # Run blocking tool in a thread — this await point lets the event loop flush
+            # the "tool_start" SSE event to the client BEFORE the tool actually runs
+            result = await asyncio.to_thread(execute_tool, tc["name"], tc["arguments"])
             tools_used.append({"tool": tc["name"], "args": tc["arguments"]})
             steps_log.append(f"Step {step+1}: {tc['name']} → {str(result)[:120]}...")
             logger.info("[Step %d] %s(%s) → %s",
@@ -395,7 +401,7 @@ async def run_agent(
     # Force generate if max_steps exhausted
     logger.warning("Max steps (%d) exhausted — forcing final answer", max_steps)
     messages.append({"role": "user", "content": "Summarize available information and answer."})
-    final = llm.chat_with_tools(messages, [])
+    final = await asyncio.to_thread(llm.chat_with_tools, messages, [])
     logger.info("FORCED FINAL ANSWER:\n%s", final["content"])
     logger.info("=" * 70)
     _extract_law_refs(final["content"], sources)
