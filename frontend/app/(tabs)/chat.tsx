@@ -20,6 +20,7 @@ import { BlurView } from "expo-blur";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import Markdown from "react-native-markdown-display";
+import Markdown from "react-native-markdown-display";
 import { useLocalSearchParams } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
 import { useVoiceChatRecorder } from "@/hooks/useVoiceChatRecorder";
@@ -72,55 +73,113 @@ function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
   const urlSources = (sources ?? []).filter((s) => s.startsWith("http"));
   return (
     <View style={{ gap: 0 }}>
-      {lines.map((line, i) => {
-        const isSourceLine = /^Source:/i.test(line.trim());
-        if (isSourceLine) {
-          const ref = line.replace(/^Source:\s*/i, "").trim();
-          return (
-            <View key={i} style={answerStyles.sourceRow}>
-              <Text style={answerStyles.sourceRef}>
-                <Text style={answerStyles.sourceLabel}>Source: </Text>
-                {ref}
-              </Text>
-              {urlSources.length > 0 && (
-                <View style={answerStyles.chips}>
-                  {urlSources.slice(0, 3).map((url, j) => {
-                    const domain = url.replace(/^https?:\/\//, "").split("/")[0];
-                    return (
-                      <TouchableOpacity
-                        key={j}
-                        style={answerStyles.chip}
-                        onPress={() => Linking.openURL(url)}
-                      >
-                        <Text style={answerStyles.chipText} numberOfLines={1}>{domain}</Text>
-                        <Ionicons name="open-outline" size={10} color={mobileTheme.colors.primary} />
-                      </TouchableOpacity>
-                    );
-                  })}
+      <Markdown
+        style={markdownStyles}
+        onLinkPress={(url) => {
+          void Linking.openURL(url);
+          return false;
+        }}
+      >
+        {text}
+      </Markdown>
+
+      {urlSources.length > 0 && (
+        <View style={answerStyles.refsBlock}>
+          <Text style={answerStyles.refsLabel}>References</Text>
+          {urlSources.map((url, i) => {
+            const domain = url.replace(/^https?:\/\//, "").split("/")[0];
+            const path = url.replace(/^https?:\/\/[^/]+/, "").slice(0, 48) || "/";
+            return (
+              <TouchableOpacity
+                key={i}
+                style={answerStyles.refRow}
+                onPress={() => Linking.openURL(url)}
+              >
+                <Ionicons name="link-outline" size={12} color={mobileTheme.colors.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={answerStyles.refDomain}>{domain}</Text>
+                  <Text style={answerStyles.refPath} numberOfLines={1}>{path}</Text>
                 </View>
-              )}
-            </View>
-          );
-        }
-        return (
-          <Text key={i} style={answerStyles.line}>
-            {line}
+                <Ionicons name="open-outline" size={12} color={mobileTheme.colors.textSecondary} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
+    <View style={answerStyles.markdownWrap}>
+      <Markdown
+        style={markdownStyles}
+        onLinkPress={(url) => {
+          void Linking.openURL(url);
+          return false;
+        }}
+      >
+        {text}
+      </Markdown>
+      {urlSources.length > 0 && (
+        <View style={answerStyles.sourceRow}>
+          <Text style={answerStyles.sourceRef}>
+            <Text style={answerStyles.sourceLabel}>Sources</Text>
           </Text>
-        );
-      })}
+          <View style={answerStyles.chips}>
+            {urlSources.slice(0, 3).map((url, j) => {
+              const domain = url.replace(/^https?:\/\//, "").split("/")[0];
+              return (
+                <TouchableOpacity
+                  key={j}
+                  style={answerStyles.chip}
+                  onPress={() => Linking.openURL(url)}
+                >
+                  <Text style={answerStyles.chipText} numberOfLines={1}>{domain}</Text>
+                  <Ionicons name="open-outline" size={10} color={mobileTheme.colors.primary} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
+function AssessmentText({ text }: { text: string }) {
+  return (
+    <Markdown
+      style={assessmentMarkdownStyles}
+      onLinkPress={(url) => {
+        void Linking.openURL(url);
+        return false;
+      }}
+    >
+      {text}
+    </Markdown>
+  );
+}
+
 const answerStyles = StyleSheet.create({
-  line: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    color: mobileTheme.colors.textPrimary,
-    lineHeight: 21,
+  refsBlock: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(99,102,241,0.15)",
+    gap: 6,
   },
+  refsLabel: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    fontWeight: "700",
+    color: mobileTheme.colors.textSecondary,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  markdownWrap: {
+    gap: 8,
+  },
+  refRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
   sourceRow: {
-    marginTop: 6,
     gap: 6,
     paddingVertical: 3,
   },
