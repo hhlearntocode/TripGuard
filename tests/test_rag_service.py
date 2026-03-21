@@ -93,3 +93,11 @@ def test_retrieve_returns_empty_when_local_rag_disabled():
         from backend.services.rag_service import retrieve
         chunks = retrieve("motorbike license", category="traffic")
         assert chunks == []
+
+
+def test_retrieve_returns_empty_when_rag_dependencies_missing():
+    with patch.dict("backend.services.rag_service.__dict__", {"_embedder": None, "_chroma_client": None, "_rag_unavailable_reason": None}):
+        with patch("backend.services.rag_service.importlib.import_module", side_effect=ImportError("missing dep")):
+            from backend.services.rag_service import retrieve
+            chunks = retrieve("motorbike license", category="traffic")
+            assert chunks == []

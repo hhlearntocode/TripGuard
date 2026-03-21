@@ -1,11 +1,7 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-
 fastapi
 uvicorn[standard]
-chromadb
-torch==2.9.1+cpu; platform_system == "Linux"
-torch==2.9.1; platform_system != "Linux"
-sentence-transformers
+# Local RAG stack is intentionally excluded from production installs.
+# To enable Chroma + sentence-transformers locally, install requirements-rag.txt.
 openai
 ollama
 tavily-python

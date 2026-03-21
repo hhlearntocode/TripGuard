@@ -1,9 +1,10 @@
+import importlib
+import logging
 import os
-from sentence_transformers import SentenceTransformer
-import chromadb
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 _DISABLE_LOCAL_RAG_VALUES = {"1", "true", "yes", "on"}
+logger = logging.getLogger(__name__)
 
 # Absolute path — works regardless of uvicorn launch directory
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "chroma_db")
@@ -20,6 +21,7 @@ COLLECTION_MAP = {
 
 _embedder = None
 _chroma_client = None
+_rag_unavailable_reason = None
 
 
 def local_rag_disabled() -> bool:
@@ -27,12 +29,36 @@ def local_rag_disabled() -> bool:
 
 
 def _init():
-    global _embedder, _chroma_client
+    global _embedder, _chroma_client, _rag_unavailable_reason
     if local_rag_disabled():
-        return
+        return False
+    if _rag_unavailable_reason:
+        return False
     if _embedder is None:
-        _embedder = SentenceTransformer(EMBEDDING_MODEL)
-        _chroma_client = chromadb.PersistentClient(_DB_PATH)
+        try:
+            sentence_transformers = importlib.import_module("sentence_transformers")
+            chromadb = importlib.import_module("chromadb")
+        except ImportError as exc:
+            _rag_unavailable_reason = (
+                "Local RAG dependencies are not installed. "
+                "Install requirements-rag.txt or set DISABLE_LOCAL_RAG=1."
+            )
+            logger.warning("%s Import error: %s", _rag_unavailable_reason, exc)
+            return False
+
+        try:
+            _embedder = sentence_transformers.SentenceTransformer(EMBEDDING_MODEL)
+            _chroma_client = chromadb.PersistentClient(_DB_PATH)
+        except Exception as exc:
+            _rag_unavailable_reason = (
+                "Local RAG failed to initialize. "
+                "Set DISABLE_LOCAL_RAG=1 for deploys or install/cache the embedding model locally."
+            )
+            logger.warning("%s Init error: %s", _rag_unavailable_reason, exc)
+            _embedder = None
+            _chroma_client = None
+            return False
+    return True
 
 
 KEYWORDS = {
@@ -72,7 +98,8 @@ def _query_collection(col_name: str, vec: list, n: int, where: dict = None) -> t
 def retrieve(query: str, category: str = None, n: int = 3) -> list[str]:
     if local_rag_disabled():
         return []
-    _init()
+    if not _init():
+        return []
     cat = category or classify(query)
     vec = _embedder.encode(query).tolist()
 
