@@ -3,6 +3,7 @@ from sentence_transformers import SentenceTransformer
 import chromadb
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+_DISABLE_LOCAL_RAG_VALUES = {"1", "true", "yes", "on"}
 
 # Absolute path — works regardless of uvicorn launch directory
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "chroma_db")
@@ -21,8 +22,14 @@ _embedder = None
 _chroma_client = None
 
 
+def local_rag_disabled() -> bool:
+    return os.getenv("DISABLE_LOCAL_RAG", "").strip().lower() in _DISABLE_LOCAL_RAG_VALUES
+
+
 def _init():
     global _embedder, _chroma_client
+    if local_rag_disabled():
+        return
     if _embedder is None:
         _embedder = SentenceTransformer(EMBEDDING_MODEL)
         _chroma_client = chromadb.PersistentClient(_DB_PATH)
@@ -63,6 +70,8 @@ def _query_collection(col_name: str, vec: list, n: int, where: dict = None) -> t
 
 
 def retrieve(query: str, category: str = None, n: int = 3) -> list[str]:
+    if local_rag_disabled():
+        return []
     _init()
     cat = category or classify(query)
     vec = _embedder.encode(query).tolist()

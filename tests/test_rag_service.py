@@ -86,3 +86,10 @@ def test_retrieve_fallback_when_low_results(mock_chroma_client):
         chunks = retrieve("motorbike license", category="traffic")
         # Should have called get_collection multiple times (fallback to all)
         assert mock_chroma_client.get_collection.call_count > 1
+
+
+def test_retrieve_returns_empty_when_local_rag_disabled():
+    with patch.dict("os.environ", {"DISABLE_LOCAL_RAG": "1"}):
+        from backend.services.rag_service import retrieve
+        chunks = retrieve("motorbike license", category="traffic")
+        assert chunks == []

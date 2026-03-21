@@ -16,9 +16,10 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Pre-warm RAG service on startup
-    from backend.services.rag_service import _init
-    _init()
+    # Pre-warm RAG only when local corpus retrieval is enabled.
+    from backend.services.rag_service import _init, local_rag_disabled
+    if not local_rag_disabled():
+        _init()
     yield
 
 
