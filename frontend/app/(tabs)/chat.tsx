@@ -18,6 +18,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
+import Markdown from "react-native-markdown-display";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
 import {
   appendMessageToThread,
@@ -64,91 +65,68 @@ interface PendingAttachment {
 
 function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
   const urlSources = (sources ?? []).filter((s) => s.startsWith("http"));
-  const lines = text.split("\n");
+  const references =
+    urlSources.length > 0
+      ? `\n\n### References\n${urlSources.map((url) => `- [${url.replace(/^https?:\/\//, "").split("/")[0]}](${url})`).join("\n")}`
+      : "";
+  const markdownContent = `${text.trim()}${references}`;
+
   return (
-    <View style={{ gap: 0 }}>
-      {lines.map((line, i) => {
-        const isSourceLine = /^Source:/i.test(line.trim());
-        if (isSourceLine) {
-          const ref = line.replace(/^Source:\s*/i, "").trim();
-          return (
-            <View key={i} style={answerStyles.sourceRow}>
-              <Text style={answerStyles.sourceRef}>
-                <Text style={answerStyles.sourceLabel}>Source: </Text>
-                {ref}
-              </Text>
-              {urlSources.length > 0 && (
-                <View style={answerStyles.chips}>
-                  {urlSources.slice(0, 3).map((url, j) => {
-                    const domain = url.replace(/^https?:\/\//, "").split("/")[0];
-                    return (
-                      <TouchableOpacity
-                        key={j}
-                        style={answerStyles.chip}
-                        onPress={() => Linking.openURL(url)}
-                      >
-                        <Text style={answerStyles.chipText} numberOfLines={1}>{domain}</Text>
-                        <Ionicons name="open-outline" size={10} color={mobileTheme.colors.primary} />
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          );
-        }
-        return (
-          <Text key={i} style={answerStyles.line}>
-            {line}
-          </Text>
-        );
-      })}
-    </View>
+    <Markdown
+      style={markdownStyles}
+      onLinkPress={(url) => {
+        void Linking.openURL(url);
+        return false;
+      }}
+    >
+      {markdownContent}
+    </Markdown>
   );
 }
 
-const answerStyles = StyleSheet.create({
-  line: {
+const markdownStyles = StyleSheet.create({
+  body: {
     fontFamily: mobileTheme.fonts.body,
     fontSize: 14,
     color: mobileTheme.colors.textPrimary,
     lineHeight: 21,
   },
-  sourceRow: {
-    marginTop: 6,
-    gap: 6,
-  },
-  sourceRef: {
+  paragraph: {
     fontFamily: mobileTheme.fonts.body,
-    fontSize: 12,
-    color: mobileTheme.colors.textSecondary,
-    lineHeight: 18,
+    fontSize: 14,
+    color: mobileTheme.colors.textPrimary,
+    lineHeight: 21,
+    marginTop: 0,
+    marginBottom: 8,
   },
-  sourceLabel: {
+  heading3: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  bullet_list: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  ordered_list: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  list_item: {
+    marginBottom: 4,
+  },
+  strong: {
     fontWeight: "700",
     color: mobileTheme.colors.textPrimary,
   },
-  chips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: mobileTheme.colors.primarySoft,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: "rgba(99,102,241,0.18)",
-  },
-  chipText: {
+  link: {
     fontFamily: mobileTheme.fonts.body,
-    fontSize: 11,
+    fontSize: 13,
     color: mobileTheme.colors.primary,
-    maxWidth: 180,
+    textDecorationLine: "underline",
   },
 });
 
@@ -207,6 +185,8 @@ export default function ChatScreen() {
       content: msg.content,
       state: msg.state as LegalityUiState | undefined,
       created_at: msg.created_at,
+      attachments: msg.attachments,
+      sources: msg.sources,
     }));
     setActiveChatId(chatId);
     setMessages(nextMessages);
@@ -343,7 +323,11 @@ export default function ChatScreen() {
     };
     const convo = [...messages, userMessage];
     setMessages(convo);
-    await appendMessageToThread(threadId, { role: "user", content: query });
+    await appendMessageToThread(threadId, {
+      role: "user",
+      content: query,
+      attachments: sentAttachments.map((a) => ({ uri: a.uri })),
+    });
 
     const userCount = convo.filter((m) => m.role === "user").length;
     if (userCount === 1) {
@@ -406,7 +390,12 @@ export default function ChatScreen() {
           sources,
         };
         setMessages((prev) => [...prev, nextMessage]);
-        await appendMessageToThread(threadId, { role: "assistant", content: answer, state: nextState });
+        await appendMessageToThread(threadId, {
+          role: "assistant",
+          content: answer,
+          state: nextState,
+          sources,
+        });
         setUiState(nextState);
       } else {
         // Fallback: non-streaming (native builds that don't support body reader)
@@ -421,7 +410,12 @@ export default function ChatScreen() {
           sources: data.sources || [],
         };
         setMessages((prev) => [...prev, nextMessage]);
-        await appendMessageToThread(threadId, { role: "assistant", content: data.answer || "", state: nextState });
+        await appendMessageToThread(threadId, {
+          role: "assistant",
+          content: data.answer || "",
+          state: nextState,
+          sources: data.sources || [],
+        });
         setUiState(nextState);
       }
     } catch (e) {
