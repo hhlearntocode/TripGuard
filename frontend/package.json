@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
+    "start": "ANDROID_HOME=\"$HOME/.local/share/android-sdk\" PATH=\"$PATH:$HOME/.local/share/android-sdk/platform-tools\" expo start",
+    "android": "ANDROID_HOME=\"$HOME/.local/share/android-sdk\" PATH=\"$PATH:$HOME/.local/share/android-sdk/platform-tools\" expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web"
   },
@@ -12,9 +12,11 @@
     "@expo/vector-icons": "^14.0.2",
     "@react-native-async-storage/async-storage": "1.23.1",
     "expo": "~51.0.0",
+    "expo-blur": "^55.0.10",
     "expo-constants": "~16.0.2",
     "expo-font": "~12.0.10",
     "expo-image-picker": "~15.0.7",
+    "expo-linear-gradient": "^55.0.9",
     "expo-linking": "~6.3.1",
     "expo-router": "~3.5.0",
     "expo-splash-screen": "~0.27.5",
@@ -28,8 +30,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
-    "typescript": "~5.3.3",
-    "@types/react": "~18.2.79"
+    "@types/react": "~18.2.79",
+    "typescript": "~5.3.3"
   },
   "private": true
 }

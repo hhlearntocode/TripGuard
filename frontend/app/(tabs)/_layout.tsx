@@ -1,33 +1,51 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
+import { BlurView } from "expo-blur";
+
+const TAB_ACTIVE = "#E8D4A6";
+const TAB_INACTIVE = "rgba(248, 250, 252, 0.42)";
+
+function TabBarBackground() {
+  if (Platform.OS === "web") {
+    return (
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: "rgba(15, 23, 42, 0.94)" },
+        ]}
+      />
+    );
+  }
+  return (
+    <BlurView
+      intensity={72}
+      tint="dark"
+      style={StyleSheet.absoluteFill}
+    />
+  );
+}
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#14B8A6",
-        tabBarInactiveTintColor: "#9CA3AF",
+        tabBarActiveTintColor: TAB_ACTIVE,
+        tabBarInactiveTintColor: TAB_INACTIVE,
         tabBarStyle: {
-          backgroundColor: "#fff",
-          borderTopColor: "#E5E7EB",
-          height: Platform.OS === "ios" ? 88 : 60,
-          paddingBottom: Platform.OS === "ios" ? 28 : 8,
-          paddingTop: 8,
+          backgroundColor: "transparent",
+          borderTopWidth: 1,
+          borderTopColor: "rgba(255, 255, 255, 0.08)",
+          elevation: 0,
+          height: Platform.OS === "ios" ? 88 : 64,
+          paddingBottom: Platform.OS === "ios" ? 28 : 10,
+          paddingTop: 10,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarBackground: TabBarBackground,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600", letterSpacing: 0.3 },
         headerShown: false,
       }}
     >
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: "Chat",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-outline" size={size} color={color} />
-          ),
-        }}
-      />
       <Tabs.Screen
         name="checklist"
         options={{

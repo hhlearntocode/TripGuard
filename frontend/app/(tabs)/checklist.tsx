@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
@@ -18,17 +20,15 @@ interface CheckItem {
 function buildChecklist(profile: UserProfile): CheckItem[] {
   const items: CheckItem[] = [];
 
-  // IDP / License check
   const idp = getIdpStatus(profile.nationality);
   items.push({
     id: "idp",
     title: "International Driving Permit",
     status: idp.valid ? "ok" : "error",
     detail: idp.note,
-    law: "NĐ 168/2024/NĐ-CP Điều 5",
+    law: "ND 168/2024/ND-CP Art. 5",
   });
 
-  // Visa check
   const visaDays = getVisaFreeDays(profile.nationality);
   if (visaDays > 0) {
     items.push({
@@ -44,11 +44,10 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
       title: "Visa / Entry",
       status: "error",
       detail: `${profile.nationality} citizens require an e-visa — apply at evisa.xuatnhapcanh.gov.vn`,
-      law: "NĐ 07/2023/NĐ-CP",
+      law: "ND 07/2023/ND-CP",
     });
   }
 
-  // Drone check
   if (profile.has_drone) {
     const droneInfo = DRONE_WEIGHTS[profile.drone_model] || DRONE_WEIGHTS["Other"];
     if (droneInfo.requiresPermit) {
@@ -57,7 +56,7 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
         title: `Drone: ${profile.drone_model}`,
         status: "error",
         detail: `${droneInfo.weight}g — requires permit + Vietnamese organization sponsor before flying`,
-        law: "NĐ 288/2025/NĐ-CP",
+        law: "ND 288/2025/ND-CP",
       });
     } else {
       items.push({
@@ -65,18 +64,17 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
         title: `Drone: ${profile.drone_model}`,
         status: "ok",
         detail: `${droneInfo.weight}g — under 250g limit, no permit needed`,
-        law: "NĐ 288/2025/NĐ-CP",
+        law: "ND 288/2025/ND-CP",
       });
     }
   }
 
-  // General reminders
   items.push({
     id: "helmet",
     title: "Motorbike Helmet",
     status: "warning",
-    detail: "Mandatory for all riders — fine 400,000–600,000 VND if not worn",
-    law: "NĐ 168/2024/NĐ-CP",
+    detail: "Mandatory for all riders — fine 400,000-600,000 VND if not worn",
+    law: "ND 168/2024/ND-CP",
   });
 
   items.push({
@@ -84,24 +82,24 @@ function buildChecklist(profile: UserProfile): CheckItem[] {
     title: "Alcohol Limit",
     status: "warning",
     detail: "Zero tolerance for drink driving — any detectable alcohol level is illegal",
-    law: "NĐ 168/2024/NĐ-CP",
+    law: "ND 168/2024/ND-CP",
   });
 
   items.push({
     id: "drugs",
     title: "Drug Laws",
     status: "warning",
-    detail: "Extremely strict — possession carries 2–20 year prison sentences",
-    law: "Bộ luật Hình sự 2015",
+    detail: "Extremely strict — possession carries 2-20 year prison sentences",
+    law: "Penal Code 2015",
   });
 
   return items;
 }
 
-const STATUS_ICONS = {
-  ok:      { icon: "checkmark-circle",  color: "#10B981", bg: "#D1FAE5" },
-  warning: { icon: "warning",           color: "#F59E0B", bg: "#FEF3C7" },
-  error:   { icon: "close-circle",      color: "#EF4444", bg: "#FEE2E2" },
+const STATUS_CONFIG = {
+  ok:      { icon: "checkmark-circle" as const, color: "#10B981", bgColor: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.2)" },
+  warning: { icon: "warning" as const,          color: "#F59E0B", bgColor: "rgba(245,158,11,0.12)", borderColor: "rgba(245,158,11,0.2)" },
+  error:   { icon: "close-circle" as const,     color: "#EF4444", bgColor: "rgba(239,68,68,0.12)",  borderColor: "rgba(239,68,68,0.2)" },
 };
 
 export default function ChecklistScreen() {
@@ -114,14 +112,24 @@ export default function ChecklistScreen() {
 
   if (!profile) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <View style={styles.container}>
+        <LinearGradient
+          colors={["#0A0F1C", "#0D1B2A", "#122333"]}
+          style={StyleSheet.absoluteFill}
+        />
         <View style={styles.center}>
+          <Ionicons name="person-outline" size={40} color="rgba(255,255,255,0.3)" />
           <Text style={styles.centerText}>Complete onboarding to see your checklist.</Text>
-          <TouchableOpacity style={styles.btn} onPress={() => router.push("/onboarding/profile")}>
-            <Text style={styles.btnText}>Set up profile</Text>
+          <TouchableOpacity
+            style={styles.ctaBtn}
+            onPress={() => router.push("/onboarding/profile")}
+          >
+            <LinearGradient colors={["#14B8A6", "#0D9488"]} style={styles.ctaGradient}>
+              <Text style={styles.ctaBtnText}>Set up profile</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -130,62 +138,75 @@ export default function ChecklistScreen() {
   const warnings = items.filter((i) => i.status === "warning").length;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Travel Checklist</Text>
-        <Text style={styles.headerSub}>{profile.nationality} citizen</Text>
-      </View>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={["#0A0F1C", "#0D1B2A", "#122333", "#0D1B2A"]}
+        style={StyleSheet.absoluteFill}
+      />
 
-      {/* Summary bar */}
+      <BlurView intensity={40} tint="dark" style={styles.headerBlur}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Travel Checklist</Text>
+          <Text style={styles.headerSub}>{profile.nationality} citizen</Text>
+        </View>
+      </BlurView>
+
       <View style={styles.summary}>
         {errors > 0 && (
-          <View style={[styles.summaryBadge, { backgroundColor: "#FEE2E2" }]}>
-            <Text style={[styles.summaryText, { color: "#DC2626" }]}>{errors} issue{errors > 1 ? "s" : ""} ❌</Text>
+          <View style={[styles.summaryBadge, { backgroundColor: "rgba(239,68,68,0.12)", borderColor: "rgba(239,68,68,0.2)" }]}>
+            <Ionicons name="close-circle" size={14} color="#EF4444" />
+            <Text style={[styles.summaryText, { color: "#EF4444" }]}>{errors} issue{errors > 1 ? "s" : ""}</Text>
           </View>
         )}
         {warnings > 0 && (
-          <View style={[styles.summaryBadge, { backgroundColor: "#FEF3C7" }]}>
-            <Text style={[styles.summaryText, { color: "#D97706" }]}>{warnings} warning{warnings > 1 ? "s" : ""} ⚠️</Text>
+          <View style={[styles.summaryBadge, { backgroundColor: "rgba(245,158,11,0.12)", borderColor: "rgba(245,158,11,0.2)" }]}>
+            <Ionicons name="warning" size={14} color="#F59E0B" />
+            <Text style={[styles.summaryText, { color: "#F59E0B" }]}>{warnings} warning{warnings > 1 ? "s" : ""}</Text>
           </View>
         )}
         {errors === 0 && warnings === 0 && (
-          <View style={[styles.summaryBadge, { backgroundColor: "#D1FAE5" }]}>
-            <Text style={[styles.summaryText, { color: "#059669" }]}>All clear ✅</Text>
+          <View style={[styles.summaryBadge, { backgroundColor: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.2)" }]}>
+            <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+            <Text style={[styles.summaryText, { color: "#10B981" }]}>All clear</Text>
           </View>
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.list}>
+      <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
         {items.map((item) => {
-          const s = STATUS_ICONS[item.status];
+          const s = STATUS_CONFIG[item.status];
           return (
             <View key={item.id} style={[styles.card, { borderLeftColor: s.color }]}>
-              <View style={[styles.iconWrap, { backgroundColor: s.bg }]}>
-                <Ionicons name={s.icon as any} size={22} color={s.color} />
+              <View style={[styles.iconWrap, { backgroundColor: s.bgColor }]}>
+                <Ionicons name={s.icon} size={20} color={s.color} />
               </View>
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle}>{item.title}</Text>
                 <Text style={styles.cardDetail}>{item.detail}</Text>
-                {item.law && <Text style={styles.cardLaw}>Source: {item.law}</Text>}
+                {item.law && <Text style={styles.cardLaw}>{item.law}</Text>}
               </View>
             </View>
           );
         })}
+        <View style={{ height: 100 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F3F4F6" },
-  header: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderColor: "#E5E7EB",
+  container: { flex: 1, backgroundColor: "#0A0F1C" },
+  headerBlur: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+    paddingTop: Platform.OS === "ios" ? 54 : 40,
   },
-  headerTitle: { fontSize: 22, fontWeight: "800", color: "#1F2937" },
-  headerSub: { fontSize: 14, color: "#6B7280", marginTop: 2 },
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  headerTitle: { fontSize: 22, fontWeight: "800", color: "#F8FAFC", letterSpacing: 0.3 },
+  headerSub: { fontSize: 13, color: "rgba(255,255,255,0.4)", marginTop: 3, fontWeight: "500" },
   summary: {
     flexDirection: "row",
     padding: 16,
@@ -194,37 +215,40 @@ const styles = StyleSheet.create({
   },
   summaryBadge: {
     borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   summaryText: { fontSize: 13, fontWeight: "700" },
-  list: { padding: 16, gap: 12 },
+  list: { paddingHorizontal: 16, gap: 10 },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 16,
     padding: 16,
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 12,
-    borderLeftWidth: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    gap: 14,
+    borderLeftWidth: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
   },
   iconWrap: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
   cardBody: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: "#1F2937", marginBottom: 4 },
-  cardDetail: { fontSize: 14, color: "#4B5563", lineHeight: 20 },
-  cardLaw: { fontSize: 11, color: "#9CA3AF", marginTop: 4 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 40 },
-  centerText: { fontSize: 16, color: "#6B7280", textAlign: "center", marginBottom: 20 },
-  btn: { backgroundColor: "#14B8A6", padding: 14, borderRadius: 10 },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: "#F8FAFC", marginBottom: 4 },
+  cardDetail: { fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 20 },
+  cardLaw: { fontSize: 11, color: "rgba(255,255,255,0.25)", marginTop: 6, fontWeight: "500" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 40, gap: 16 },
+  centerText: { fontSize: 16, color: "rgba(255,255,255,0.5)", textAlign: "center" },
+  ctaBtn: { borderRadius: 14, overflow: "hidden" },
+  ctaGradient: { paddingHorizontal: 28, paddingVertical: 14 },
+  ctaBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
 });

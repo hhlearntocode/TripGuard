@@ -1,9 +1,12 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  SafeAreaView, Switch, TextInput, Platform,
+  Switch, TextInput, Platform,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter, type Href } from "expo-router";
 import { saveUserProfile } from "@/hooks/useUserProfile";
 import { NATIONALITIES, getIdpStatus, getVisaFreeDays, DRONE_WEIGHTS } from "@/constants/legal";
 
@@ -41,46 +44,67 @@ export default function ProfileScreen() {
       has_drone: hasDrone,
       drone_model: hasDrone ? droneModel : "None",
     });
-    router.replace("/(tabs)/chat");
+    router.replace("/home" as Href);
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={["#0A0F1C", "#0D1B2A", "#122333"]}
+        style={StyleSheet.absoluteFill}
+      />
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoRow}>
-          <Text style={styles.logo}>🛡️</Text>
+          <LinearGradient colors={["#14B8A6", "#0D9488"]} style={styles.logoIcon}>
+            <Ionicons name="shield-checkmark" size={22} color="#fff" />
+          </LinearGradient>
           <Text style={styles.logoText}>TripGuard</Text>
         </View>
         <Text style={styles.subtitle}>AI Legal Companion for Vietnam</Text>
         <View style={styles.stepIndicator}>
           {[0, 1, 2].map((i) => (
-            <View key={i} style={[styles.dot, step >= i && styles.dotActive]} />
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                step >= i && styles.dotActive,
+                step === i && styles.dotCurrent,
+              ]}
+            />
           ))}
         </View>
       </View>
 
-      <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {step === 0 && (
           <View>
             <Text style={styles.stepTitle}>Select your nationality</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search country..."
-              value={search}
-              onChangeText={setSearch}
-              placeholderTextColor="#9CA3AF"
-            />
+            <View style={styles.searchWrap}>
+              <Ionicons name="search" size={18} color="rgba(255,255,255,0.3)" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search country..."
+                value={search}
+                onChangeText={setSearch}
+                placeholderTextColor="rgba(255,255,255,0.25)"
+                selectionColor="#14B8A6"
+              />
+            </View>
             {filtered.map((n) => (
               <TouchableOpacity
                 key={n}
                 style={[styles.option, nationality === n && styles.optionSelected]}
                 onPress={() => setNationality(n)}
+                activeOpacity={0.7}
               >
                 <Text style={[styles.optionText, nationality === n && styles.optionTextSelected]}>
                   {n}
                 </Text>
-                {nationality === n && <Text style={styles.check}>✓</Text>}
+                {nationality === n && (
+                  <Ionicons name="checkmark-circle" size={20} color="#14B8A6" />
+                )}
               </TouchableOpacity>
             ))}
           </View>
@@ -90,12 +114,16 @@ export default function ProfileScreen() {
           <View>
             <Text style={styles.stepTitle}>Your Driving Status</Text>
             <View style={[styles.infoCard, idpInfo.valid ? styles.cardGreen : styles.cardRed]}>
-              <Text style={styles.cardEmoji}>{idpInfo.valid ? "✅" : "❌"}</Text>
+              <Ionicons
+                name={idpInfo.valid ? "checkmark-circle" : "close-circle"}
+                size={32}
+                color={idpInfo.valid ? "#10B981" : "#EF4444"}
+              />
               <Text style={styles.cardTitle}>{idpInfo.convention}</Text>
               <Text style={styles.cardNote}>{idpInfo.note}</Text>
             </View>
             <View style={styles.infoCard}>
-              <Text style={styles.cardEmoji}>🛂</Text>
+              <Ionicons name="document-text" size={32} color="#14B8A6" />
               <Text style={styles.cardTitle}>Visa-Free Stay</Text>
               <Text style={styles.cardNote}>
                 {visaFreeDays > 0
@@ -114,7 +142,7 @@ export default function ProfileScreen() {
               <Switch
                 value={hasDrone}
                 onValueChange={setHasDrone}
-                trackColor={{ false: "#E5E7EB", true: "#14B8A6" }}
+                trackColor={{ false: "rgba(255,255,255,0.1)", true: "#14B8A6" }}
                 thumbColor="#fff"
               />
             </View>
@@ -128,6 +156,7 @@ export default function ProfileScreen() {
                       key={model}
                       style={[styles.option, droneModel === model && styles.optionSelected]}
                       onPress={() => setDroneModel(model)}
+                      activeOpacity={0.7}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.optionText, droneModel === model && styles.optionTextSelected]}>
@@ -135,7 +164,9 @@ export default function ProfileScreen() {
                         </Text>
                         <Text style={styles.droneNote}>{info.note}</Text>
                       </View>
-                      {droneModel === model && <Text style={styles.check}>✓</Text>}
+                      {droneModel === model && (
+                        <Ionicons name="checkmark-circle" size={20} color="#14B8A6" />
+                      )}
                     </TouchableOpacity>
                   );
                 })}
@@ -143,127 +174,175 @@ export default function ProfileScreen() {
             )}
           </View>
         )}
+        <View style={{ height: 100 }} />
       </ScrollView>
 
       {/* Bottom actions */}
-      <View style={styles.footer}>
-        {step > 0 && (
-          <TouchableOpacity style={styles.backBtn} onPress={() => setStep(step - 1)}>
-            <Text style={styles.backBtnText}>Back</Text>
+      <BlurView intensity={40} tint="dark" style={styles.footerBlur}>
+        <View style={styles.footer}>
+          {step > 0 && (
+            <TouchableOpacity style={styles.backBtn} onPress={() => setStep(step - 1)}>
+              <Text style={styles.backBtnText}>Back</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[styles.nextBtn, step === 0 && !nationality && styles.nextBtnDisabled]}
+            disabled={step === 0 && !nationality}
+            onPress={() => {
+              if (step < 2) setStep(step + 1);
+              else handleFinish();
+            }}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={
+                step === 0 && !nationality
+                  ? ["rgba(255,255,255,0.06)", "rgba(255,255,255,0.03)"]
+                  : ["#14B8A6", "#0D9488"]
+              }
+              style={styles.nextBtnGradient}
+            >
+              <Text style={[
+                styles.nextBtnText,
+                step === 0 && !nationality && { color: "rgba(255,255,255,0.2)" },
+              ]}>
+                {step === 2 ? "Start TripGuard" : "Continue"}
+              </Text>
+              <Ionicons
+                name={step === 2 ? "shield-checkmark" : "arrow-forward"}
+                size={18}
+                color={step === 0 && !nationality ? "rgba(255,255,255,0.2)" : "#fff"}
+              />
+            </LinearGradient>
           </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={[
-            styles.nextBtn,
-            step === 0 && !nationality && styles.nextBtnDisabled,
-          ]}
-          disabled={step === 0 && !nationality}
-          onPress={() => {
-            if (step < 2) setStep(step + 1);
-            else handleFinish();
-          }}
-        >
-          <Text style={styles.nextBtnText}>
-            {step === 2 ? "Start TripGuard" : "Continue"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+        </View>
+      </BlurView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFB" },
+  container: { flex: 1, backgroundColor: "#0A0F1C" },
   header: {
-    backgroundColor: "#14B8A6",
-    padding: 24,
-    paddingTop: 40,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === "ios" ? 64 : 50,
+    paddingBottom: 24,
     alignItems: "center",
   },
-  logoRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
-  logo: { fontSize: 28 },
-  logoText: { fontSize: 24, fontWeight: "800", color: "#fff" },
-  subtitle: { fontSize: 14, color: "#CCFBF1", marginBottom: 16 },
-  stepIndicator: { flexDirection: "row", gap: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.4)" },
-  dotActive: { backgroundColor: "#fff" },
-  body: { flex: 1, padding: 20 },
-  stepTitle: { fontSize: 20, fontWeight: "700", color: "#1F2937", marginBottom: 16 },
-  searchInput: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
+  logoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
+  logoIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  logoText: { fontSize: 24, fontWeight: "800", color: "#F8FAFC", letterSpacing: 0.5 },
+  subtitle: { fontSize: 14, color: "rgba(255,255,255,0.4)", marginBottom: 20, fontWeight: "500" },
+  stepIndicator: { flexDirection: "row", gap: 10 },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  dotActive: { backgroundColor: "rgba(20,184,166,0.4)" },
+  dotCurrent: { backgroundColor: "#14B8A6", width: 24 },
+  body: { flex: 1, paddingHorizontal: 20 },
+  stepTitle: { fontSize: 20, fontWeight: "700", color: "#F8FAFC", marginBottom: 16, letterSpacing: 0.3 },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 14,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginBottom: 12,
-    color: "#1F2937",
+    borderColor: "rgba(255,255,255,0.08)",
+    marginBottom: 14,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 13,
+    fontSize: 15,
+    color: "#F8FAFC",
   },
   option: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 14,
+    padding: 15,
     marginBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "rgba(255,255,255,0.06)",
   },
-  optionSelected: { borderColor: "#14B8A6", backgroundColor: "#F0FDFA" },
-  optionText: { flex: 1, fontSize: 15, color: "#374151" },
-  optionTextSelected: { color: "#0F766E", fontWeight: "600" },
-  check: { color: "#14B8A6", fontSize: 16, fontWeight: "700" },
+  optionSelected: {
+    borderColor: "rgba(20,184,166,0.4)",
+    backgroundColor: "rgba(20,184,166,0.08)",
+  },
+  optionText: { flex: 1, fontSize: 15, color: "rgba(255,255,255,0.6)" },
+  optionTextSelected: { color: "#14B8A6", fontWeight: "600" },
   infoCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
+    gap: 8,
   },
-  cardGreen: { borderColor: "#6EE7B7", backgroundColor: "#F0FDF4" },
-  cardRed: { borderColor: "#FCA5A5", backgroundColor: "#FFF5F5" },
-  cardEmoji: { fontSize: 28, marginBottom: 8 },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: "#1F2937", marginBottom: 4 },
-  cardNote: { fontSize: 14, color: "#6B7280", textAlign: "center" },
+  cardGreen: { borderColor: "rgba(16,185,129,0.3)", backgroundColor: "rgba(16,185,129,0.08)" },
+  cardRed: { borderColor: "rgba(239,68,68,0.3)", backgroundColor: "rgba(239,68,68,0.08)" },
+  cardTitle: { fontSize: 16, fontWeight: "700", color: "#F8FAFC" },
+  cardNote: { fontSize: 14, color: "rgba(255,255,255,0.5)", textAlign: "center", lineHeight: 20 },
   switchRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: "rgba(255,255,255,0.05)",
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "rgba(255,255,255,0.08)",
   },
-  switchLabel: { fontSize: 16, color: "#1F2937", fontWeight: "500" },
-  droneLabel: { fontSize: 15, fontWeight: "600", color: "#374151", marginBottom: 8 },
-  droneNote: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  switchLabel: { fontSize: 16, color: "#F8FAFC", fontWeight: "500" },
+  droneLabel: { fontSize: 15, fontWeight: "600", color: "rgba(255,255,255,0.6)", marginBottom: 10 },
+  droneNote: { fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 3 },
+  footerBlur: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    paddingBottom: Platform.OS === "ios" ? 30 : 12,
+  },
   footer: {
     flexDirection: "row",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 14,
     gap: 12,
-    borderTopWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#fff",
   },
   backBtn: {
     flex: 1,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "rgba(255,255,255,0.1)",
     alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
   },
-  backBtnText: { fontSize: 16, fontWeight: "600", color: "#6B7280" },
+  backBtnText: { fontSize: 16, fontWeight: "600", color: "rgba(255,255,255,0.5)" },
   nextBtn: {
     flex: 2,
-    backgroundColor: "#14B8A6",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
+    borderRadius: 14,
+    overflow: "hidden",
   },
-  nextBtnDisabled: { backgroundColor: "#9CA3AF" },
+  nextBtnDisabled: {},
+  nextBtnGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    gap: 8,
+  },
   nextBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
 });

@@ -5,8 +5,14 @@ import { StatusBar } from "expo-status-bar";
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: "#0A0F1C" },
+          animation: "fade",
+        }}
+      />
     </SafeAreaProvider>
   );
 }
