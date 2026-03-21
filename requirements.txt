@@ -1,11 +1,13 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 fastapi
 uvicorn[standard]
 chromadb
+torch==2.9.1+cpu; platform_system == "Linux"
+torch==2.9.1; platform_system != "Linux"
 sentence-transformers
 openai
 ollama
 tavily-python
 httpx
 python-dotenv
-pytest
-pytest-asyncio
