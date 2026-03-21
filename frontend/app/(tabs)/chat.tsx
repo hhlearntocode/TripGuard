@@ -62,6 +62,96 @@ interface PendingAttachment {
   base64?: string;
 }
 
+function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
+  const urlSources = (sources ?? []).filter((s) => s.startsWith("http"));
+  const lines = text.split("\n");
+  return (
+    <View style={{ gap: 0 }}>
+      {lines.map((line, i) => {
+        const isSourceLine = /^Source:/i.test(line.trim());
+        if (isSourceLine) {
+          const ref = line.replace(/^Source:\s*/i, "").trim();
+          return (
+            <View key={i} style={answerStyles.sourceRow}>
+              <Text style={answerStyles.sourceRef}>
+                <Text style={answerStyles.sourceLabel}>Source: </Text>
+                {ref}
+              </Text>
+              {urlSources.length > 0 && (
+                <View style={answerStyles.chips}>
+                  {urlSources.slice(0, 3).map((url, j) => {
+                    const domain = url.replace(/^https?:\/\//, "").split("/")[0];
+                    return (
+                      <TouchableOpacity
+                        key={j}
+                        style={answerStyles.chip}
+                        onPress={() => Linking.openURL(url)}
+                      >
+                        <Text style={answerStyles.chipText} numberOfLines={1}>{domain}</Text>
+                        <Ionicons name="open-outline" size={10} color={mobileTheme.colors.primary} />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          );
+        }
+        return (
+          <Text key={i} style={answerStyles.line}>
+            {line}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
+
+const answerStyles = StyleSheet.create({
+  line: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    color: mobileTheme.colors.textPrimary,
+    lineHeight: 21,
+  },
+  sourceRow: {
+    marginTop: 6,
+    gap: 6,
+  },
+  sourceRef: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    color: mobileTheme.colors.textSecondary,
+    lineHeight: 18,
+  },
+  sourceLabel: {
+    fontWeight: "700",
+    color: mobileTheme.colors.textPrimary,
+  },
+  chips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: mobileTheme.colors.primarySoft,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: "rgba(99,102,241,0.18)",
+  },
+  chipText: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    color: mobileTheme.colors.primary,
+    maxWidth: 180,
+  },
+});
+
 export default function ChatScreen() {
   const params = useLocalSearchParams<{ query?: string; chat_id?: string }>();
   const { width } = useWindowDimensions();
@@ -224,7 +314,7 @@ export default function ChatScreen() {
             });
             const sign = await visionResp.json();
             if (sign?.code) {
-              return `[Traffic sign in photo: ${sign.code} — "${sign.name}"]`;
+              return `[Traffic sign in photo: ${sign.code} — "${sign.name}" — category:${sign.category ?? "unknown"}]`;
             }
             return `- Image ${i + 1}: not recognized as a Vietnamese traffic sign.`;
           } catch {
@@ -468,21 +558,10 @@ export default function ChatScreen() {
                                 ))}
                               </View>
                             )}
-                            <Text style={styles.chatBubbleText}>{item.content}</Text>
-                            {item.role === "assistant" && !!item.sources?.length && (
-                              <View style={styles.sourcesBlock}>
-                                <Text style={styles.sourcesLabel}>Sources</Text>
-                                {item.sources.map((src, i) => {
-                                  const isUrl = src.startsWith("http");
-                                  return isUrl ? (
-                                    <TouchableOpacity key={i} onPress={() => Linking.openURL(src)}>
-                                      <Text style={styles.sourceLink} numberOfLines={1}>{src}</Text>
-                                    </TouchableOpacity>
-                                  ) : (
-                                    <Text key={i} style={styles.sourceRef}>{src}</Text>
-                                  );
-                                })}
-                              </View>
+                            {item.role === "assistant" ? (
+                              <AnswerText text={item.content} sources={item.sources} />
+                            ) : (
+                              <Text style={styles.chatBubbleText}>{item.content}</Text>
                             )}
                           </View>
                         ))}
@@ -605,21 +684,10 @@ export default function ChatScreen() {
                               ))}
                             </View>
                           )}
-                          <Text style={styles.chatBubbleText}>{item.content}</Text>
-                          {item.role === "assistant" && !!item.sources?.length && (
-                            <View style={styles.sourcesBlock}>
-                              <Text style={styles.sourcesLabel}>Sources</Text>
-                              {item.sources.map((src, i) => {
-                                const isUrl = src.startsWith("http");
-                                return isUrl ? (
-                                  <TouchableOpacity key={i} onPress={() => Linking.openURL(src)}>
-                                    <Text style={styles.sourceLink} numberOfLines={1}>{src}</Text>
-                                  </TouchableOpacity>
-                                ) : (
-                                  <Text key={i} style={styles.sourceRef}>{src}</Text>
-                                );
-                              })}
-                            </View>
+                          {item.role === "assistant" ? (
+                            <AnswerText text={item.content} sources={item.sources} />
+                          ) : (
+                            <Text style={styles.chatBubbleText}>{item.content}</Text>
                           )}
                         </View>
                       ))}
@@ -1099,35 +1167,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: mobileTheme.colors.textSecondary,
     fontStyle: "italic",
-  },
-  sourcesBlock: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(16, 36, 59, 0.08)",
-    gap: 4,
-  },
-  sourcesLabel: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-    color: mobileTheme.colors.textSecondary,
-    marginBottom: 4,
-  },
-  sourceLink: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 12,
-    color: mobileTheme.colors.primary,
-    textDecorationLine: "underline",
-    lineHeight: 18,
-  },
-  sourceRef: {
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 12,
-    color: mobileTheme.colors.textSecondary,
-    lineHeight: 18,
   },
   sentAttachmentRow: {
     flexDirection: "row",

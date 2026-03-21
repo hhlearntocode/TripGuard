@@ -243,7 +243,7 @@ Source: Quyết định 1079/QĐ-TTg; NĐ 07/2023/NĐ-CP
 
 
 _SIGN_PATTERN = re.compile(
-    r'\[Traffic sign in photo: ([A-Z0-9][A-Z0-9\.\-]*) — "([^"]+)"'
+    r'\[Traffic sign in photo: ([A-Z0-9][A-Z0-9\.\-]*) — "([^"]+)" — category:([^\]]+)\]'
 )
 
 _TRUSTED_DOMAINS = [
@@ -254,25 +254,53 @@ _TRUSTED_DOMAINS = [
 async def _presearch_sign(
     sign_code: str,
     sign_name: str,
+    sign_category: str,
     sources: list,
     tools_used: list,
     steps_log: list,
     on_event=None,
 ) -> str:
-    """Pre-execute web search + scrape for a detected traffic sign. Returns injected context string."""
+    """
+    Pre-execute three steps for a detected traffic sign, in order:
+      1. retrieve_law  — query ChromaDB with the sign code + name
+      2. web_search    — targeted Vietnamese government query
+      3. scrape_url    — extract full text from the best trusted URL
+
+    Returns an injected context string appended to the user message.
+    """
     from backend.services.tool_registry import execute_tool
 
-    query = f"biển báo {sign_code} {sign_name} QCVN 41:2024 ý nghĩa quy định xử phạt site:thuvienphapluat.vn"
-    logger.info("[PRE-SEARCH] sign=%s  query=%s", sign_code, query)
+    logger.info("[PRE-SEARCH] sign=%s (%s / %s)", sign_code, sign_name, sign_category)
 
+    # ── Step 1: ChromaDB retrieval ────────────────────────────────────────────
+    retrieve_query = f"{sign_code} {sign_name} Vietnamese traffic sign regulation fine"
     if on_event:
-        on_event({"type": "tool_start", "tool": "web_search", "query": query})
-    # Run blocking call in thread so the event loop can flush the SSE event above
-    search_result = await asyncio.to_thread(execute_tool, "web_search", {"query": query, "max_results": 5})
-    tools_used.append({"tool": "web_search", "args": {"query": query}})
+        on_event({"type": "tool_start", "tool": "retrieve_law", "query": retrieve_query})
+    law_chunks = await asyncio.to_thread(
+        execute_tool,
+        "retrieve_law",
+        {"query": retrieve_query, "category": "traffic", "n_results": 3},
+    )
+    tools_used.append({"tool": "retrieve_law", "args": {"query": retrieve_query, "category": "traffic"}})
+    steps_log.append(f"Pre-search retrieve_law({sign_code}) → {str(law_chunks)[:120]}...")
+    logger.info("[PRE-SEARCH] retrieve_law → %s", str(law_chunks)[:200])
+
+    # ── Step 2: Web search ────────────────────────────────────────────────────
+    search_query = (
+        f"biển báo {sign_code} {sign_name} QCVN 41:2024 ý nghĩa quy định xử phạt "
+        f"site:thuvienphapluat.vn"
+    )
+    if on_event:
+        on_event({"type": "tool_start", "tool": "web_search", "query": search_query})
+    search_result = await asyncio.to_thread(
+        execute_tool,
+        "web_search",
+        {"query": search_query, "max_results": 5},
+    )
+    tools_used.append({"tool": "web_search", "args": {"query": search_query}})
     steps_log.append(f"Pre-search web_search({sign_code}) → {str(search_result)[:120]}...")
 
-    # Collect URLs and find the best trusted one to scrape
+    # Collect URLs for scraping
     found_urls: list[str] = []
     for line in search_result.splitlines():
         if line.strip().startswith("URL:"):
@@ -281,6 +309,7 @@ async def _presearch_sign(
                 sources.append(url)
                 found_urls.append(url)
 
+    # ── Step 3: Scrape best trusted URL ──────────────────────────────────────
     scrape_context = ""
     best_url = next(
         (u for u in found_urls if any(d in u for d in _TRUSTED_DOMAINS)),
@@ -294,8 +323,11 @@ async def _presearch_sign(
         )
         if on_event:
             on_event({"type": "tool_start", "tool": "scrape_url", "url": best_url})
-        # Run blocking call in thread so the event loop can flush the SSE event above
-        scrape_result = await asyncio.to_thread(execute_tool, "scrape_url", {"url": best_url, "goal": goal})
+        scrape_result = await asyncio.to_thread(
+            execute_tool,
+            "scrape_url",
+            {"url": best_url, "goal": goal},
+        )
         tools_used.append({"tool": "scrape_url", "args": {"url": best_url, "goal": goal}})
         steps_log.append(f"Pre-search scrape_url({best_url}) → {str(scrape_result)[:120]}...")
         if best_url not in sources:
@@ -304,7 +336,8 @@ async def _presearch_sign(
         logger.info("[PRE-SEARCH] scraped %s → %s", best_url, str(scrape_result)[:200])
 
     return (
-        f"\n\n[BACKGROUND RESEARCH — sign {sign_code} ({sign_name})]\n"
+        f"\n\n[BACKGROUND RESEARCH — sign {sign_code} ({sign_name}, category: {sign_category})]\n"
+        f"Law corpus results:\n{law_chunks}\n\n"
         f"Web search results:\n{search_result}"
         f"{scrape_context}\n"
         f"[Use the above to answer the user's question accurately.]"
@@ -329,9 +362,9 @@ async def run_agent(
     enriched_message = user_message
     sign_match = _SIGN_PATTERN.search(user_message)
     if sign_match:
-        sign_code, sign_name = sign_match.group(1), sign_match.group(2)
-        logger.info("[PRE-SEARCH] Detected sign %s — running background research", sign_code)
-        context = _presearch_sign(sign_code, sign_name, sources, tools_used, steps_log, on_event=on_event)
+        sign_code, sign_name, sign_category = sign_match.group(1), sign_match.group(2), sign_match.group(3)
+        logger.info("[PRE-SEARCH] Detected sign %s (%s) — running background research", sign_code, sign_category)
+        context = await _presearch_sign(sign_code, sign_name, sign_category, sources, tools_used, steps_log, on_event=on_event)
         enriched_message = user_message + context
 
     messages = [
