@@ -923,3 +923,161 @@ Ready to proceed? (y/n)
 - TinyFish `/run` (sync) timeout is 25s — on timeout, skip the URL, do not retry
 - UI UX Pro Max skill is active — run `design-system/MASTER.md` generation once before building any UI (see UI Reference section). Reference images in `docs/ui/` override the generated design system for layout decisions.
 - `.gitignore`: `backend/chroma_db/`, `rag/`, `venv*/`, `.env`
+
+---
+
+## Integration Contract
+
+> Canonical shapes for every frontend↔backend integration point.
+> Full TypeScript interfaces live in `docs/api-contract.ts`.
+> This section is the quick-reference version for Claude Code.
+
+---
+
+### Canonical UserProfile fields
+
+These are the **exact** key names the backend requires.
+`SYSTEM_PROMPT.format(**user_profile)` will raise `KeyError` if any is missing or misspelled.
+
+| Field | Type | Example values |
+|-------|------|----------------|
+| `nationality` | `str` | `"United States"`, `"Germany"` |
+| `idp_type` | `str` | `"1968 Vienna Convention"` · `"1949 Geneva"` · `"ASEAN"` · `"Bilateral"` · `"None"` |
+| `visa_free_days` | `int` | `45`, `30`, `0` |
+| `has_drone` | `bool` | `True` / `False` |
+| `drone_model` | `str` | `"DJI Mini 4 Pro"` · `"None"` |
+
+No other keys may be added — `.format(**user_profile)` is strict.
+
+---
+
+### ChatRequest (POST /api/chat)
+
+```json
+{
+  "message": "Can I ride a motorbike with my US license?",
+  "user_profile": {
+    "nationality": "United States",
+    "idp_type": "1949 Geneva",
+    "visa_free_days": 0,
+    "has_drone": false,
+    "drone_model": "None"
+  },
+  "conversation_history": [
+    { "role": "user",      "content": "prior user turn" },
+    { "role": "assistant", "content": "prior assistant reply" }
+  ]
+}
+```
+
+**Rules:**
+- `conversation_history` must contain **only prior turns** — NOT the current `message`.
+  (See breaking bug #1 below — current code sends the current user turn twice.)
+- Each history entry must have exactly `role` and `content` — no extra fields.
+
+---
+
+### ChatResponse (POST /api/chat)
+
+```json
+{
+  "answer": "❌ Illegal — ...\n\nWhat the law says:\n...\n\nSource: NĐ 168/2024/NĐ-CP Điều 5\n⚠️ Legal information only, not legal advice.",
+  "sources": [
+    "https://thuvienphapluat.vn/...",
+    "NĐ 168/2024/NĐ-CP Điều 5"
+  ],
+  "debug": {
+    "steps": ["Step 1: retrieve_law → ..."],
+    "tools_used": [{ "tool": "retrieve_law", "args": { "query": "..." } }]
+  }
+}
+```
+
+Frontend currently consumes only `answer`. `sources` and `debug` are available but unused.
+
+---
+
+### VisionRequest (POST /api/vision)
+
+```json
+{ "image_b64": "<raw base64 string — NO data:image/jpeg;base64, prefix>" }
+```
+
+The backend (`vision_service.py`) adds the `data:image/jpeg;base64,` prefix before calling Gemini Flash.
+Frontend must send **raw base64** only (as returned by `ImagePicker` with `base64: true`).
+
+---
+
+### VisionResponse (POST /api/vision)
+
+```json
+{ "code": "P.102", "name": "No Entry", "category": "prohibition", "meaning": "..." }
+```
+
+When the image is not a recognised traffic sign:
+
+```json
+{ "code": null, "name": null, "meaning": null }
+```
+
+After receiving a successful vision response, the string injected into the chat `message` **must** follow this exact format so the agent's `_SIGN_PATTERN` regex triggers pre-search enrichment:
+
+```
+[Traffic sign in photo: P.102 — "No Entry"]
+```
+
+---
+
+### Tabs — local vs backend
+
+| Tab | API calls | Data source |
+|-----|-----------|-------------|
+| `chat` | `POST /api/chat`, `POST /api/vision` | Backend (FastAPI) |
+| `checklist` | **None** | AsyncStorage (user profile + chat threads) |
+| `emergency` | **None** | `frontend/constants/emergency.ts` (hardcoded, offline-safe) |
+
+---
+
+### Breaking mismatches (must fix before app works correctly)
+
+#### Bug #1 — Conversation history double-send
+
+**File:** `frontend/app/(tabs)/chat.tsx` ~line 247–269
+**Problem:** The new user message is appended to `convo` first, then the entire `convo` array is mapped into `conversation_history`. The backend then appends `message` again — the current user turn appears **twice** in the LLM context.
+**Fix:** Build `conversation_history` from messages **before** appending the new user message, or use `convo.slice(0, -1)`.
+
+```typescript
+// Current (broken)
+const convo = [...messages, userMessage];
+setMessages(convo);
+const history = convo.map((m) => ({ role: m.role, content: m.content }));
+
+// Fixed
+const history = messages.map((m) => ({ role: m.role, content: m.content }));
+const convo = [...messages, userMessage];
+setMessages(convo);
+```
+
+---
+
+#### Bug #2 — Vision sign format mismatch
+
+**Files:** `frontend/app/(tabs)/chat.tsx` ~line 228 · `backend/services/agent.py` ~line 244
+**Problem:** Frontend formats identified signs as:
+```
+- Image 1: P.102 No Entry — Do not enter at this road
+```
+Agent `_SIGN_PATTERN` expects:
+```
+[Traffic sign in photo: P.102 — "No Entry"]
+```
+`_presearch_sign()` never fires → no web_search + scrape pre-enrichment for sign queries.
+**Fix:** Change the frontend injection line:
+
+```typescript
+// Current (broken)
+lines.push(`- Image ${i + 1}: ${sign.code} ${sign.name} — ${sign.meaning}`);
+
+// Fixed
+lines.push(`[Traffic sign in photo: ${sign.code} — "${sign.name}"]`);
+```

@@ -3,6 +3,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   NativeSyntheticEvent,
   Platform,
   ScrollView,
@@ -52,6 +53,7 @@ interface Message {
   state?: LegalityUiState;
   created_at: string;
   attachments?: Array<{ uri: string }>;
+  sources?: string[];
 }
 
 interface PendingAttachment {
@@ -76,6 +78,7 @@ export default function ChatScreen() {
   const [isAssessmentCollapsed, setIsAssessmentCollapsed] = useState(false);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [composerHeight, setComposerHeight] = useState(188);
+  const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const conversationScrollRef = useRef<ScrollView | null>(null);
 
   const quickScenarios = useMemo(
@@ -210,32 +213,36 @@ export default function ChatScreen() {
     const sentAttachments = [...attachments];
     let query = typedQuery || "I attached image(s). Please analyze what this means legally in Vietnam.";
     if (attachments.length > 0) {
-      const lines: string[] = [];
-      for (let i = 0; i < attachments.length; i += 1) {
-        const a = attachments[i];
-        if (!a.base64) {
-          lines.push(`- Image ${i + 1}: attached (analysis unavailable).`);
-          continue;
-        }
-        try {
-          const visionResp = await fetch(`${API_URL}/api/vision`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image_b64: a.base64 }),
-          });
-          const sign = await visionResp.json();
-          if (sign?.code) {
-            lines.push(`- Image ${i + 1}: ${sign.code} ${sign.name} — ${sign.meaning}`);
-          } else {
-            lines.push(`- Image ${i + 1}: not recognized as a Vietnamese traffic sign.`);
+      const lines = await Promise.all(
+        attachments.map(async (a, i) => {
+          if (!a.base64) return `- Image ${i + 1}: attached (analysis unavailable).`;
+          try {
+            const visionResp = await fetch(`${API_URL}/api/vision`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ image_b64: a.base64 }),
+            });
+            const sign = await visionResp.json();
+            if (sign?.code) {
+              return `[Traffic sign in photo: ${sign.code} — "${sign.name}"]`;
+            }
+            return `- Image ${i + 1}: not recognized as a Vietnamese traffic sign.`;
+          } catch {
+            return `- Image ${i + 1}: could not analyze image.`;
           }
-        } catch {
-          lines.push(`- Image ${i + 1}: could not analyze image.`);
-        }
-      }
+        })
+      );
       query = `${query}\n\nAttached images:\n${lines.join("\n")}`;
     }
     setAttachments([]);
+
+    // Build history from prior turns ONLY — before appending the new user message.
+    // Sending convo (which includes the new message) would cause the current turn
+    // to appear twice in the LLM context (once in history, once as `message`).
+    const history = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 
     const userMessage: Message = {
       id: `u-${Date.now().toString()}`,
@@ -253,13 +260,14 @@ export default function ChatScreen() {
       await updateChatThreadTitle(threadId, query);
     }
 
-    const history = convo.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const TOOL_LABELS: Record<string, string> = {
+      retrieve_law: "Retrieving ...",
+      web_search: "Searching ...",
+      scrape_url: "Gathering information ...",
+    };
 
     try {
-      const resp = await fetch(`${API_URL}/api/chat`, {
+      const resp = await fetch(`${API_URL}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -268,18 +276,64 @@ export default function ChatScreen() {
           conversation_history: history,
         }),
       });
-      const data = await resp.json();
-      const nextState = deriveLegalityState(data.answer || "");
-      const nextMessage: Message = {
-        id: `a-${Date.now().toString()}`,
-        role: "assistant",
-        content: data.answer,
-        state: nextState,
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, nextMessage]);
-      await appendMessageToThread(threadId, { role: "assistant", content: data.answer || "", state: nextState });
-      setUiState(nextState);
+
+      // Streaming path (web + modern native)
+      if (resp.body) {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let answer = "";
+        let sources: string[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            let event: Record<string, unknown>;
+            try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+            if (event.type === "tool_start") {
+              setLoadingStatus(TOOL_LABELS[event.tool as string] ?? null);
+            } else if (event.type === "done") {
+              answer = (event.answer as string) || "";
+              sources = (event.sources as string[]) || [];
+            }
+          }
+        }
+
+        const nextState = deriveLegalityState(answer);
+        const nextMessage: Message = {
+          id: `a-${Date.now().toString()}`,
+          role: "assistant",
+          content: answer,
+          state: nextState,
+          created_at: new Date().toISOString(),
+          sources,
+        };
+        setMessages((prev) => [...prev, nextMessage]);
+        await appendMessageToThread(threadId, { role: "assistant", content: answer, state: nextState });
+        setUiState(nextState);
+      } else {
+        // Fallback: non-streaming (native builds that don't support body reader)
+        const data = await resp.json();
+        const nextState = deriveLegalityState(data.answer || "");
+        const nextMessage: Message = {
+          id: `a-${Date.now().toString()}`,
+          role: "assistant",
+          content: data.answer,
+          state: nextState,
+          created_at: new Date().toISOString(),
+          sources: data.sources || [],
+        };
+        setMessages((prev) => [...prev, nextMessage]);
+        await appendMessageToThread(threadId, { role: "assistant", content: data.answer || "", state: nextState });
+        setUiState(nextState);
+      }
     } catch (e) {
       const fallback = "TripGuard could not verify the scenario right now. Check your connection and retry.";
       const errorMessage: Message = {
@@ -293,6 +347,7 @@ export default function ChatScreen() {
       await appendMessageToThread(threadId, { role: "assistant", content: fallback, state: "warning" });
       setUiState("warning");
     } finally {
+      setLoadingStatus(null);
       setIsLoading(false);
     }
   };
@@ -386,7 +441,7 @@ export default function ChatScreen() {
                     contentContainerStyle={{ paddingBottom: 12 }}
                     onContentSizeChange={scrollConversationToBottom}
                   >
-                    {messages.length === 0 ? (
+                    {messages.length === 0 && !isLoading ? (
                       <View style={styles.emptyCard}>
                         <Text style={styles.emptyTitle}>No messages in this thread yet</Text>
                         <Text style={styles.emptySub}>Start with a clear question to begin this conversation.</Text>
@@ -414,8 +469,29 @@ export default function ChatScreen() {
                               </View>
                             )}
                             <Text style={styles.chatBubbleText}>{item.content}</Text>
+                            {item.role === "assistant" && !!item.sources?.length && (
+                              <View style={styles.sourcesBlock}>
+                                <Text style={styles.sourcesLabel}>Sources</Text>
+                                {item.sources.map((src, i) => {
+                                  const isUrl = src.startsWith("http");
+                                  return isUrl ? (
+                                    <TouchableOpacity key={i} onPress={() => Linking.openURL(src)}>
+                                      <Text style={styles.sourceLink} numberOfLines={1}>{src}</Text>
+                                    </TouchableOpacity>
+                                  ) : (
+                                    <Text key={i} style={styles.sourceRef}>{src}</Text>
+                                  );
+                                })}
+                              </View>
+                            )}
                           </View>
                         ))}
+                        {isLoading && (
+                          <View style={[styles.chatBubble, styles.chatBubbleAssistant, styles.statusBubble]}>
+                            <Text style={styles.chatBubbleRole}>TripGuard</Text>
+                            <Text style={styles.statusBubbleText}>{loadingStatus ?? "Thinking ..."}</Text>
+                          </View>
+                        )}
                       </View>
                     )}
                   </ScrollView>
@@ -435,7 +511,7 @@ export default function ChatScreen() {
                     <View style={styles.loadingCard}>
                       <StatusPill state="checking" />
                       <Text style={styles.loadingText}>
-                        Checking legal posture and consequence before returning an answer.
+                        {loadingStatus ?? "Checking legal posture and consequence before returning an answer."}
                       </Text>
                     </View>
                   )}
@@ -502,7 +578,7 @@ export default function ChatScreen() {
                   ]}
                   onContentSizeChange={scrollConversationToBottom}
                 >
-                  {messages.length === 0 ? (
+                  {messages.length === 0 && !isLoading ? (
                     <View style={styles.emptyCard}>
                       <Text style={styles.emptyTitle}>No messages in this thread yet</Text>
                       <Text style={styles.emptySub}>Start with a clear question to begin this conversation.</Text>
@@ -530,8 +606,29 @@ export default function ChatScreen() {
                             </View>
                           )}
                           <Text style={styles.chatBubbleText}>{item.content}</Text>
+                          {item.role === "assistant" && !!item.sources?.length && (
+                            <View style={styles.sourcesBlock}>
+                              <Text style={styles.sourcesLabel}>Sources</Text>
+                              {item.sources.map((src, i) => {
+                                const isUrl = src.startsWith("http");
+                                return isUrl ? (
+                                  <TouchableOpacity key={i} onPress={() => Linking.openURL(src)}>
+                                    <Text style={styles.sourceLink} numberOfLines={1}>{src}</Text>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <Text key={i} style={styles.sourceRef}>{src}</Text>
+                                );
+                              })}
+                            </View>
+                          )}
                         </View>
                       ))}
+                      {isLoading && (
+                        <View style={[styles.chatBubble, styles.chatBubbleAssistant, styles.statusBubble]}>
+                          <Text style={styles.chatBubbleRole}>TripGuard</Text>
+                          <Text style={styles.statusBubbleText}>{loadingStatus ?? "Thinking ..."}</Text>
+                        </View>
+                      )}
                     </View>
                   )}
                 </ScrollView>
@@ -993,6 +1090,44 @@ const styles = StyleSheet.create({
     fontFamily: mobileTheme.fonts.body,
     fontSize: 14,
     lineHeight: 21,
+  },
+  statusBubble: {
+    opacity: 0.72,
+  },
+  statusBubbleText: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 13,
+    color: mobileTheme.colors.textSecondary,
+    fontStyle: "italic",
+  },
+  sourcesBlock: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(16, 36, 59, 0.08)",
+    gap: 4,
+  },
+  sourcesLabel: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    color: mobileTheme.colors.textSecondary,
+    marginBottom: 4,
+  },
+  sourceLink: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    color: mobileTheme.colors.primary,
+    textDecorationLine: "underline",
+    lineHeight: 18,
+  },
+  sourceRef: {
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 12,
+    color: mobileTheme.colors.textSecondary,
+    lineHeight: 18,
   },
   sentAttachmentRow: {
     flexDirection: "row",

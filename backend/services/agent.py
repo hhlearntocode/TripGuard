@@ -250,13 +250,22 @@ _TRUSTED_DOMAINS = [
 ]
 
 
-def _presearch_sign(sign_code: str, sign_name: str, sources: list, tools_used: list, steps_log: list) -> str:
+def _presearch_sign(
+    sign_code: str,
+    sign_name: str,
+    sources: list,
+    tools_used: list,
+    steps_log: list,
+    on_event=None,
+) -> str:
     """Pre-execute web search + scrape for a detected traffic sign. Returns injected context string."""
     from backend.services.tool_registry import execute_tool
 
     query = f"biển báo {sign_code} {sign_name} QCVN 41:2024 ý nghĩa quy định xử phạt site:thuvienphapluat.vn"
     logger.info("[PRE-SEARCH] sign=%s  query=%s", sign_code, query)
 
+    if on_event:
+        on_event({"type": "tool_start", "tool": "web_search", "query": query})
     search_result = execute_tool("web_search", {"query": query, "max_results": 5})
     tools_used.append({"tool": "web_search", "args": {"query": query}})
     steps_log.append(f"Pre-search web_search({sign_code}) → {str(search_result)[:120]}...")
@@ -281,6 +290,8 @@ def _presearch_sign(sign_code: str, sign_name: str, sources: list, tools_used: l
             f"from QCVN 41:2024: meaning, where it is placed, what violation it covers, "
             f"applicable fines under NĐ 168/2024/NĐ-CP, and any related regulations."
         )
+        if on_event:
+            on_event({"type": "tool_start", "tool": "scrape_url", "url": best_url})
         scrape_result = execute_tool("scrape_url", {"url": best_url, "goal": goal})
         tools_used.append({"tool": "scrape_url", "args": {"url": best_url, "goal": goal}})
         steps_log.append(f"Pre-search scrape_url({best_url}) → {str(scrape_result)[:120]}...")
@@ -302,6 +313,7 @@ async def run_agent(
     user_profile: dict,
     conversation_history: list[dict] = None,
     max_steps: int = 6,
+    on_event=None,
 ) -> dict:
     from backend.services.llm_adapter import get_adapter
     from backend.services.tool_registry import TOOL_SCHEMAS, execute_tool
@@ -316,7 +328,7 @@ async def run_agent(
     if sign_match:
         sign_code, sign_name = sign_match.group(1), sign_match.group(2)
         logger.info("[PRE-SEARCH] Detected sign %s — running background research", sign_code)
-        context = _presearch_sign(sign_code, sign_name, sources, tools_used, steps_log)
+        context = _presearch_sign(sign_code, sign_name, sources, tools_used, steps_log, on_event=on_event)
         enriched_message = user_message + context
 
     messages = [
@@ -353,6 +365,13 @@ async def run_agent(
         })
 
         for tc in response["tool_calls"]:
+            if on_event:
+                event: dict = {"type": "tool_start", "tool": tc["name"]}
+                if tc["name"] == "scrape_url":
+                    event["url"] = tc["arguments"].get("url", "")
+                elif tc["name"] == "web_search":
+                    event["query"] = tc["arguments"].get("query", "")
+                on_event(event)
             result = execute_tool(tc["name"], tc["arguments"])
             tools_used.append({"tool": tc["name"], "args": tc["arguments"]})
             steps_log.append(f"Step {step+1}: {tc['name']} → {str(result)[:120]}...")
