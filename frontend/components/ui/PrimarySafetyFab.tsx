@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
     bottom: 18,
   },
   fab: {
-    backgroundColor: mobileTheme.colors.surfaceStrong,
+    backgroundColor: "#2563EB",
     borderRadius: 999,
     paddingLeft: 18,
     paddingRight: 10,
@@ -54,10 +54,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    shadowColor: "#091321",
-    shadowOpacity: 0.18,
+    shadowColor: "#7CA7FF",
+    shadowOpacity: 0.32,
     shadowRadius: 18,
-    elevation: 8,
+    elevation: 10,
   },
   fabPressed: {
     opacity: 0.97,
@@ -78,11 +78,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#F8F4EC",
+    backgroundColor: "#FDF4F7",
     alignItems: "center",
     justifyContent: "center",
   },
   scanCapsulePressed: {
-    backgroundColor: "#EEE6D9",
+    backgroundColor: "#F7E5EC",
   },
 });

@@ -56,9 +56,8 @@ export default function HeroShowcase({
             accessibilityRole="button"
             accessibilityLabel="Join the private membership waitlist"
             onPress={onJoinMembership}
-            style={({ hovered, pressed }) => [
+            style={({ pressed }) => [
               styles.primaryButton,
-              hovered && styles.primaryButtonHovered,
               pressed && styles.primaryButtonPressed,
             ]}
           >
@@ -69,9 +68,8 @@ export default function HeroShowcase({
             accessibilityRole="button"
             accessibilityLabel="Start exploring TripGuard"
             onPress={onStartExploring}
-            style={({ hovered, pressed }) => [
+            style={({ pressed }) => [
               styles.secondaryButton,
-              hovered && styles.secondaryButtonHovered,
               pressed && styles.secondaryButtonPressed,
             ]}
           >

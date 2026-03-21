@@ -16,19 +16,18 @@ import { useLocalSearchParams } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
 import { appendChatHistory, ChatHistoryEntry } from "@/hooks/useChatHistory";
 import ScreenSurface from "@/components/ui/ScreenSurface";
-import AppDashboardMenu from "@/components/ui/AppDashboardMenu";
-import SectionHeader from "@/components/ui/SectionHeader";
-import StatusPill from "@/components/ui/StatusPill";
-import { deriveLegalityState, getLegalityTone, LegalityUiState } from "@/features/flows";
+import ChatSettingsSheet from "@/components/ui/ChatSettingsSheet";
+import ChatMessageBubble from "@/components/ui/ChatMessageBubble";
+import { deriveLegalityState, LegalityUiState } from "@/features/flows";
 import { mobileTheme } from "@/theme/mobileTheme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
 
 interface Message {
   id: string;
-  query: string;
+  role: "user" | "assistant";
   content: string;
-  state: LegalityUiState;
+  state?: LegalityUiState;
 }
 
 export default function ChatScreen() {
@@ -37,18 +36,12 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [uiState, setUiState] = useState<LegalityUiState>("uncertain");
 
-  const quickScenarios = useMemo(
+  const starterPrompts = useMemo(
     () => [
-      "I have a small drone. Can I fly it near a temple in Vietnam?",
-      "I’m carrying prescription medicine from my country. Can I bring it into Vietnam legally?",
-      "I rented a motorbike in Vietnam. Can I ride it with my foreign driver’s license?",
-      "What will happen if I accidentally enter a restricted military or border area?",
-      "Can I bring a vape or e-cigarette into Vietnam through the airport?",
-      "Is it legal to take photos or videos at historical or religious sites?",
-      "What are the risks if I overstay my visa in Vietnam?",
-      "Can I carry cash over the allowed limit when entering Vietnam?",
+      "Can I fly a drone near a temple?",
+      "Can I bring prescription medicine into Vietnam?",
+      "What happens if I overstay my visa?",
     ],
     []
   );
@@ -80,14 +73,16 @@ export default function ChatScreen() {
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading || !profile) return;
 
-    setUiState("checking");
+    const userMessage: Message = {
+      id: `user-${Date.now().toString()}`,
+      role: "user",
+      content: text,
+    };
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
 
-    const history = messages.flatMap((m) => ([
-      { role: "user", content: m.query },
-      { role: "assistant", content: m.content },
-    ]));
+    const history = messages.map((m) => ({ role: m.role, content: m.content }));
 
     try {
       const resp = await fetch(`${API_URL}/api/chat`, {
@@ -100,26 +95,26 @@ export default function ChatScreen() {
         }),
       });
       const data = await resp.json();
-      const nextState = deriveLegalityState(data.answer || "");
-      const nextMessage: Message = {
-        id: Date.now().toString(),
-        query: text,
-        content: data.answer,
-        state: nextState,
+      const answer = data.answer || "TripGuard could not classify this scenario.";
+      const state = deriveLegalityState(answer);
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now().toString()}`,
+        role: "assistant",
+        content: answer,
+        state,
       };
-      setMessages((prev) => [nextMessage, ...prev]);
-      await persistHistory(text, data.answer || "");
-      setUiState(nextState);
+      setMessages((prev) => [...prev, assistantMessage]);
+      await persistHistory(text, answer);
     } catch (e) {
       const fallback = "TripGuard could not verify the scenario right now. Check your connection and retry.";
-      setMessages((prev) => [{
-        id: `err-${Date.now().toString()}`,
-        query: text,
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now().toString()}`,
+        role: "assistant",
         content: fallback,
         state: "warning",
-      }, ...prev]);
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
       await persistHistory(text, fallback);
-      setUiState("warning");
     } finally {
       setIsLoading(false);
     }
@@ -153,6 +148,7 @@ export default function ChatScreen() {
       if (sign.code) {
         message = `I photographed a sign: ${sign.code} ${sign.name} — ${sign.meaning}. What does this mean for me and what are the consequences if I violate it?`;
       }
+      setIsLoading(false);
       await sendMessage(message);
     } catch (e) {
       setIsLoading(false);
@@ -162,10 +158,9 @@ export default function ChatScreen() {
 
   return (
     <ScreenSurface
-      title="Legality Check"
-      subtitle={getLegalityTone(uiState)}
-      leftNode={<AppDashboardMenu />}
-      rightNode={<StatusPill state={isLoading ? "checking" : uiState} />}
+      title="Check"
+      subtitle="Ask one scenario at a time."
+      rightNode={<ChatSettingsSheet currentQuery={input} />}
       scrollable={false}
     >
       <KeyboardAvoidingView
@@ -173,240 +168,201 @@ export default function ChatScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={0}
       >
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.screenContent}>
-          <View style={styles.sectionCard}>
-            <SectionHeader
-              eyebrow="Scenario input"
-              title="State the decision before you make it."
-              detail="TripGuard performs best when the action, object, or location is explicit."
-            />
-
-            <View style={styles.quickRow}>
-              {quickScenarios.map((scenario) => (
-                <TouchableOpacity
-                  key={scenario}
-                  style={styles.quickChip}
-                  onPress={() => setInput(scenario)}
-                >
-                  <Text style={styles.quickChipText}>{scenario}</Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={[styles.quickChip, styles.scanChip]}
-                onPress={pickImage}
-              >
-                <Ionicons name="camera-outline" size={15} color={mobileTheme.colors.primary} />
-                <Text style={styles.quickChipText}>Scan sign or notice</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.inputRow}>
-              <TouchableOpacity style={styles.iconBtn} onPress={pickImage} disabled={isLoading}>
-                <Ionicons name="camera-outline" size={20} color={mobileTheme.colors.primary} />
-              </TouchableOpacity>
-              <TextInput
-                style={styles.input}
-                value={input}
-                onChangeText={setInput}
-                placeholder="Example: Can I carry prescription medicine into Vietnam?"
-                placeholderTextColor="#8E7F6E"
-                multiline
-                maxLength={500}
-                returnKeyType="send"
-                onSubmitEditing={() => sendMessage(input)}
-              />
-              <TouchableOpacity
-                style={[styles.sendBtn, (!input.trim() || isLoading) && styles.sendBtnDisabled]}
-                onPress={() => sendMessage(input)}
-                disabled={!input.trim() || isLoading}
-              >
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.sectionCard}>
-            <SectionHeader
-              eyebrow="Assessment log"
-              title="Most recent checks"
-              detail="TripGuard keeps the latest decision trail visible so the user does not need to reconstruct context."
-            />
-
-            {isLoading && (
-              <View style={styles.loadingCard}>
-                <StatusPill state="checking" />
-                <Text style={styles.loadingText}>
-                  Checking legal posture and consequence before returning an answer.
+        <View style={styles.screen}>
+          <ScrollView
+            style={styles.stream}
+            contentContainerStyle={styles.streamContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {messages.length === 0 ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyBadge}>
+                  <View style={styles.emptyBadgeDot} />
+                  <Text style={styles.emptyBadgeText}>TripGuard</Text>
+                </View>
+                <Text style={styles.emptyTitle}>Describe the situation you want checked.</Text>
+                <Text style={styles.emptyBody}>
+                  Keep it specific. Mention the object, the place, and the action you are about to take.
                 </Text>
-              </View>
-            )}
 
-            {messages.length === 0 && !isLoading ? (
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyTitle}>No scenario checked yet</Text>
-                <Text style={styles.emptySub}>
-                  Start with the object, place, or action that feels uncertain.
-                </Text>
+                <View style={styles.promptList}>
+                  {starterPrompts.map((prompt) => (
+                    <TouchableOpacity
+                      key={prompt}
+                      style={styles.promptChip}
+                      onPress={() => setInput(prompt)}
+                    >
+                      <Text style={styles.promptChipText}>{prompt}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
             ) : (
-              <View style={styles.resultList}>
+              <>
                 {messages.map((item) => (
-                  <View key={item.id} style={styles.resultCard}>
-                    <View style={styles.resultHeader}>
-                      <StatusPill state={item.state} />
-                      <Text style={styles.resultLabel}>Scenario</Text>
-                    </View>
-                    <Text style={styles.resultQuery}>{item.query}</Text>
-                    <Text style={styles.resultAnswer}>{item.content}</Text>
-                  </View>
+                  <ChatMessageBubble
+                    key={item.id}
+                    role={item.role}
+                    content={item.content}
+                    state={item.state}
+                  />
                 ))}
-              </View>
+                {isLoading && (
+                  <ChatMessageBubble
+                    role="assistant"
+                    content="Checking legal posture and consequence..."
+                    state="checking"
+                  />
+                )}
+              </>
             )}
+          </ScrollView>
+
+          <View style={styles.composerDock}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Scan sign or notice"
+              style={styles.cameraButton}
+              onPress={pickImage}
+              disabled={isLoading}
+            >
+              <Ionicons name="camera-outline" size={19} color={mobileTheme.colors.primary} />
+            </TouchableOpacity>
+
+            <TextInput
+              style={styles.input}
+              value={input}
+              onChangeText={setInput}
+              placeholder="Ask TripGuard..."
+              placeholderTextColor="#8C7E70"
+              multiline
+              maxLength={500}
+            />
+
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+              style={[styles.sendButton, (!input.trim() || isLoading) && styles.sendButtonDisabled]}
+              onPress={() => sendMessage(input)}
+              disabled={!input.trim() || isLoading}
+            >
+              <Ionicons name="arrow-up" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </ScreenSurface>
   );
 }
 
 const styles = StyleSheet.create({
-  screenContent: {
-    paddingBottom: 24,
-  },
-  sectionCard: {
-    backgroundColor: mobileTheme.colors.surface,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.line,
-    padding: 18,
-    gap: 12,
-    marginBottom: 16,
-  },
-  quickRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  quickChip: {
-    backgroundColor: mobileTheme.colors.surfaceAlt,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  quickChipText: {
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  scanChip: {
-    backgroundColor: mobileTheme.colors.primarySoft,
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 10,
-    marginTop: 4,
-  },
-  iconBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: mobileTheme.colors.primarySoft,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  input: {
+  screen: {
     flex: 1,
-    backgroundColor: mobileTheme.colors.surfaceAlt,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: mobileTheme.colors.textPrimary,
-    maxHeight: 140,
-    borderWidth: 1,
-    borderColor: mobileTheme.colors.line,
-    fontFamily: mobileTheme.fonts.body,
   },
-  sendBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: mobileTheme.colors.surfaceStrong,
-    justifyContent: "center",
-    alignItems: "center",
+  stream: {
+    flex: 1,
   },
-  sendBtnDisabled: {
-    backgroundColor: "#A49787",
+  streamContent: {
+    paddingTop: 6,
+    paddingBottom: 18,
   },
-  loadingCard: {
-    backgroundColor: mobileTheme.colors.primarySoft,
-    borderRadius: 18,
-    padding: 16,
-    gap: 10,
+  emptyState: {
+    paddingTop: 30,
+    gap: 14,
   },
-  loadingText: {
-    color: mobileTheme.colors.primary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  emptyCard: {
-    backgroundColor: mobileTheme.colors.surfaceAlt,
-    borderRadius: 18,
-    padding: 18,
-    gap: 6,
-  },
-  emptyTitle: {
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  emptySub: {
-    color: mobileTheme.colors.textSecondary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  resultList: {
-    gap: 12,
-  },
-  resultCard: {
-    backgroundColor: mobileTheme.colors.surfaceAlt,
-    borderRadius: 20,
-    padding: 16,
-    gap: 10,
-  },
-  resultHeader: {
+  emptyBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    backgroundColor: "#EEF3FF",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    gap: 10,
+    gap: 7,
   },
-  resultLabel: {
-    color: mobileTheme.colors.textSecondary,
+  emptyBadgeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: mobileTheme.colors.primary,
+  },
+  emptyBadgeText: {
+    color: mobileTheme.colors.primary,
     fontFamily: mobileTheme.fonts.body,
     fontSize: 12,
     fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
   },
-  resultQuery: {
+  emptyTitle: {
     color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 16,
+    fontFamily: mobileTheme.fonts.display,
+    fontSize: 28,
+    lineHeight: 34,
     fontWeight: "700",
-    lineHeight: 22,
   },
-  resultAnswer: {
+  emptyBody: {
     color: mobileTheme.colors.textSecondary,
     fontFamily: mobileTheme.fonts.body,
     fontSize: 14,
     lineHeight: 22,
+    maxWidth: 320,
+  },
+  promptList: {
+    gap: 10,
+  },
+  promptChip: {
+    alignSelf: "flex-start",
+    borderRadius: 18,
+    backgroundColor: "#F4EEE7",
+    borderWidth: 1,
+    borderColor: "#E7DCCF",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    maxWidth: "94%",
+  },
+  promptChipText: {
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  composerDock: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 10,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === "ios" ? 22 : 14,
+  },
+  cameraButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#EEF3FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  input: {
+    flex: 1,
+    minHeight: 46,
+    maxHeight: 140,
+    borderRadius: 24,
+    backgroundColor: "#F4EEE7",
+    borderWidth: 1,
+    borderColor: "#E7DCCF",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: mobileTheme.colors.textPrimary,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 15,
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sendButtonDisabled: {
+    backgroundColor: "#B9B2A7",
   },
 });

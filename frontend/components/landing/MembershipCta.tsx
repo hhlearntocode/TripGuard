@@ -136,9 +136,8 @@ export default function MembershipCta({ onStartExploring }: MembershipCtaProps) 
             accessibilityLabel="Request private access"
             onPress={handleSubmit}
             disabled={isSubmitting}
-            style={({ hovered, pressed }) => [
+            style={({ pressed }) => [
               styles.submitButton,
-              hovered && !isSubmitting && styles.submitButtonHovered,
               pressed && !isSubmitting && styles.submitButtonPressed,
               isSubmitting && styles.submitButtonDisabled,
             ]}
@@ -152,9 +151,8 @@ export default function MembershipCta({ onStartExploring }: MembershipCtaProps) 
             accessibilityRole="button"
             accessibilityLabel="Start exploring TripGuard"
             onPress={onStartExploring}
-            style={({ hovered, pressed }) => [
+            style={({ pressed }) => [
               styles.ghostButton,
-              hovered && styles.ghostButtonHovered,
               pressed && styles.ghostButtonPressed,
             ]}
           >

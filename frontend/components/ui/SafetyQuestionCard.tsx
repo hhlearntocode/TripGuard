@@ -40,7 +40,7 @@ export default function SafetyQuestionCard({
         <Ionicons
           name={expanded ? "chevron-up" : "chevron-down"}
           size={18}
-          color="rgba(248, 244, 236, 0.72)"
+          color="#9F1D47"
         />
       </View>
 
@@ -68,18 +68,20 @@ export default function SafetyQuestionCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: mobileTheme.colors.surfaceStrong,
+    backgroundColor: "#FFD7E2",
     borderRadius: 28,
     padding: 20,
     gap: 14,
-    shadowColor: "#0B1423",
-    shadowOpacity: 0.12,
+    shadowColor: "#F18DA7",
+    shadowOpacity: 0.35,
     shadowRadius: 18,
-    elevation: 5,
+    elevation: 7,
+    borderWidth: 1,
+    borderColor: "#FBE8EE",
   },
   cardExpanded: {
-    shadowOpacity: 0.16,
-    elevation: 7,
+    shadowOpacity: 0.42,
+    elevation: 9,
   },
   cardPressed: {
     opacity: 0.97,
@@ -95,7 +97,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   overline: {
-    color: "#E7C79B",
+    color: "#9F1D47",
     fontFamily: mobileTheme.fonts.body,
     fontSize: 11,
     fontWeight: "700",
@@ -103,20 +105,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.9,
   },
   question: {
-    color: mobileTheme.colors.textOnDark,
+    color: "#5B1230",
     fontFamily: mobileTheme.fonts.display,
     fontSize: 28,
     lineHeight: 34,
     fontWeight: "700",
   },
   previewPanel: {
-    backgroundColor: "rgba(248, 244, 236, 0.08)",
+    backgroundColor: "#FFF6F8",
     borderRadius: 22,
     padding: 16,
     gap: 12,
+    shadowColor: "#FFFFFF",
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 2,
   },
   preview: {
-    color: "rgba(248, 244, 236, 0.84)",
+    color: "#6F3046",
     fontFamily: mobileTheme.fonts.body,
     fontSize: 14,
     lineHeight: 22,
@@ -125,7 +131,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   detailText: {
-    color: "rgba(248, 244, 236, 0.82)",
+    color: "#6F3046",
     fontFamily: mobileTheme.fonts.body,
     fontSize: 14,
     lineHeight: 21,
@@ -135,7 +141,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 11,
-    backgroundColor: "#1B3150",
+    backgroundColor: "#2563EB",
     flexDirection: "row",
     alignItems: "center",
     gap: 8,

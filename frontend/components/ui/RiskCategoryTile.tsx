@@ -35,19 +35,19 @@ export default function RiskCategoryTile({
 const styles = StyleSheet.create({
   tile: {
     width: "48%",
-    backgroundColor: mobileTheme.colors.surface,
+    backgroundColor: "#FFF4F7",
     borderRadius: 20,
     padding: 16,
     gap: 10,
     borderWidth: 1,
-    borderColor: mobileTheme.colors.line,
-    shadowColor: "#0B1423",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    borderColor: "#F9E2EA",
+    shadowColor: "#E3B8C8",
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 4,
   },
   tilePressed: {
-    backgroundColor: "#F1ECE4",
+    backgroundColor: "#FFE7F0",
   },
   iconWrap: {
     width: 40,
@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: mobileTheme.colors.primarySoft,
+    backgroundColor: "#E9EEFF",
   },
   title: {
     color: mobileTheme.colors.textPrimary,
