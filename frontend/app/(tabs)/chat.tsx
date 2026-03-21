@@ -106,39 +106,6 @@ function AnswerText({ text, sources }: { text: string; sources?: string[] }) {
         </View>
       )}
     </View>
-    <View style={answerStyles.markdownWrap}>
-      <Markdown
-        style={markdownStyles}
-        onLinkPress={(url) => {
-          void Linking.openURL(url);
-          return false;
-        }}
-      >
-        {text}
-      </Markdown>
-      {urlSources.length > 0 && (
-        <View style={answerStyles.sourceRow}>
-          <Text style={answerStyles.sourceRef}>
-            <Text style={answerStyles.sourceLabel}>Sources</Text>
-          </Text>
-          <View style={answerStyles.chips}>
-            {urlSources.slice(0, 3).map((url, j) => {
-              const domain = url.replace(/^https?:\/\//, "").split("/")[0];
-              return (
-                <TouchableOpacity
-                  key={j}
-                  style={answerStyles.chip}
-                  onPress={() => Linking.openURL(url)}
-                >
-                  <Text style={answerStyles.chipText} numberOfLines={1}>{domain}</Text>
-                  <Ionicons name="open-outline" size={10} color={mobileTheme.colors.primary} />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-    </View>
   );
 }
 
@@ -172,13 +139,10 @@ const answerStyles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: "uppercase",
     marginBottom: 2,
-  markdownWrap: {
-    gap: 8,
   },
   refRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-  sourceRow: {
     gap: 6,
     paddingVertical: 3,
   },
@@ -192,86 +156,6 @@ const answerStyles = StyleSheet.create({
     fontFamily: mobileTheme.fonts.body,
     fontSize: 11,
     color: mobileTheme.colors.textSecondary,
-  },
-});
-
-const markdownStyles = StyleSheet.create({
-  body: {
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  paragraph: {
-    marginTop: 0,
-    marginBottom: 8,
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  heading1: {
-    marginTop: 8,
-    marginBottom: 6,
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "700",
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-  },
-  heading2: {
-    marginTop: 8,
-    marginBottom: 6,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "700",
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-  },
-  heading3: {
-    marginTop: 8,
-    marginBottom: 4,
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: "700",
-    color: mobileTheme.colors.textPrimary,
-    fontFamily: mobileTheme.fonts.body,
-  },
-  bullet_list: {
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  ordered_list: {
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  list_item: {
-    marginBottom: 4,
-  },
-  strong: {
-    fontWeight: "700",
-    color: mobileTheme.colors.textPrimary,
-  },
-  em: {
-    fontStyle: "italic",
-  },
-  code_inline: {
-    backgroundColor: mobileTheme.colors.surface,
-    color: mobileTheme.colors.textPrimary,
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    fontFamily: mobileTheme.fonts.body,
-  },
-  link: {
-    color: mobileTheme.colors.primary,
-    textDecorationLine: "underline",
-  },
-  blockquote: {
-    borderLeftWidth: 3,
-    borderLeftColor: mobileTheme.colors.line,
-    paddingLeft: 10,
-    opacity: 0.95,
   },
 });
 
