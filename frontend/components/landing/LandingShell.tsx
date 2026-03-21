@@ -73,9 +73,8 @@ export default function LandingShell({
               accessibilityRole="button"
               accessibilityLabel={`Jump to ${item.label}`}
               onPress={() => onNavigate(item.key)}
-              style={({ hovered, pressed }) => [
+              style={({ pressed }) => [
                 styles.navLink,
-                hovered && styles.navLinkHovered,
                 pressed && styles.navLinkPressed,
               ]}
             >
@@ -88,9 +87,8 @@ export default function LandingShell({
           accessibilityRole="button"
           accessibilityLabel="Start exploring TripGuard"
           onPress={onStartExploring}
-          style={({ hovered, pressed }) => [
+          style={({ pressed }) => [
             styles.navCta,
-            hovered && styles.navCtaHovered,
             pressed && styles.navCtaPressed,
           ]}
         >

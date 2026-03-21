@@ -7,6 +7,10 @@ export function useReducedMotion() {
     if (typeof window === "undefined" || !("matchMedia" in window)) return;
 
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const legacyMedia = media as MediaQueryList & {
+      addListener?: (listener: () => void) => void;
+      removeListener?: (listener: () => void) => void;
+    };
     const update = () => setReduced(media.matches);
 
     update();
@@ -16,8 +20,8 @@ export function useReducedMotion() {
       return () => media.removeEventListener("change", update);
     }
 
-    media.addListener(update);
-    return () => media.removeListener(update);
+    legacyMedia.addListener?.(update);
+    return () => legacyMedia.removeListener?.(update);
   }, []);
 
   return reduced;
