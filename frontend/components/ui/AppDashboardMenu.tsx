@@ -2,17 +2,17 @@ import React, { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { loadChatHistory, ChatHistoryEntry } from "@/hooks/useChatHistory";
+import { createChatThread, loadChatThreadSummaries, ChatThreadSummary } from "@/hooks/useChatHistory";
 import { mobileTheme } from "@/theme/mobileTheme";
 
 export default function AppDashboardMenu() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [history, setHistory] = useState<ChatHistoryEntry[]>([]);
+  const [history, setHistory] = useState<ChatThreadSummary[]>([]);
 
   useEffect(() => {
     if (!menuOpen) return;
-    loadChatHistory().then(setHistory);
+    loadChatThreadSummaries().then(setHistory);
   }, [menuOpen]);
 
   return (
@@ -30,6 +30,17 @@ export default function AppDashboardMenu() {
                 <Ionicons name="close" size={20} color={mobileTheme.colors.textPrimary} />
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={[styles.menuItem, styles.menuItemStrong]}
+              onPress={async () => {
+                const thread = await createChatThread();
+                setMenuOpen(false);
+                router.push({ pathname: "/(tabs)/chat", params: { chat_id: thread.chat_id } });
+              }}
+            >
+              <Ionicons name="add-circle-outline" size={18} color={mobileTheme.colors.textOnDark} />
+              <Text style={styles.menuItemTextStrong}>New chat</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.menuItem}
@@ -71,18 +82,18 @@ export default function AppDashboardMenu() {
               ) : (
                 history.map((item) => (
                   <TouchableOpacity
-                    key={item.id}
+                    key={item.chat_id}
                     style={styles.historyItem}
                     onPress={() => {
                       setMenuOpen(false);
-                      router.push({ pathname: "/(tabs)/chat", params: { query: item.query } });
+                      router.push({ pathname: "/(tabs)/chat", params: { chat_id: item.chat_id } });
                     }}
                   >
                     <Text style={styles.historyQuery} numberOfLines={1}>
-                      {item.query}
+                      {item.title}
                     </Text>
                     <Text style={styles.historyPreview} numberOfLines={1}>
-                      {item.preview || "Saved scenario"}
+                      {item.preview || "No messages yet"}
                     </Text>
                   </TouchableOpacity>
                 ))
@@ -149,11 +160,21 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
+  menuItemStrong: {
+    backgroundColor: mobileTheme.colors.surfaceStrong,
+    borderColor: mobileTheme.colors.surfaceStrong,
+  },
   menuItemText: {
     color: mobileTheme.colors.textPrimary,
     fontFamily: mobileTheme.fonts.body,
     fontSize: 14,
     fontWeight: "600",
+  },
+  menuItemTextStrong: {
+    color: mobileTheme.colors.textOnDark,
+    fontFamily: mobileTheme.fonts.body,
+    fontSize: 14,
+    fontWeight: "700",
   },
   menuSectionTitle: {
     marginTop: 8,
