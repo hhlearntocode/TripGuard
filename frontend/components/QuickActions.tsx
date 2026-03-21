@@ -1,13 +1,14 @@
 import React from "react";
-import { ScrollView, TouchableOpacity, Text, StyleSheet } from "react-native";
+import { ScrollView, TouchableOpacity, Text, StyleSheet, View } from "react-native";
+import { COLORS } from "@/constants/theme";
 
 const QUICK_QUESTIONS = [
-  "Can I ride a motorbike with my US license?",
-  "Can I fly my drone in Hoi An?",
-  "What happens if I overstay my visa?",
-  "Can I bring vapes into Vietnam?",
-  "What are the alcohol limits for driving?",
-  "Do I need a permit for a DJI Mini 4 Pro?",
+  { icon: "🏍️", text: "Can I ride a motorbike with my US license?" },
+  { icon: "🚁", text: "Can I fly my drone in Hoi An?" },
+  { icon: "🛂", text: "What happens if I overstay my visa?" },
+  { icon: "🚬", text: "Can I bring vapes into Vietnam?" },
+  { icon: "🍺", text: "What are the alcohol limits for driving?" },
+  { icon: "📸", text: "Do I need a permit for a DJI Mini 4 Pro?" },
 ];
 
 interface Props {
@@ -26,8 +27,9 @@ export default function QuickActions({ onSelect, visible }: Props) {
       contentContainerStyle={styles.content}
     >
       {QUICK_QUESTIONS.map((q) => (
-        <TouchableOpacity key={q} style={styles.chip} onPress={() => onSelect(q)}>
-          <Text style={styles.chipText}>{q}</Text>
+        <TouchableOpacity key={q.text} style={styles.chip} onPress={() => onSelect(q.text)}>
+          <Text style={styles.chipIcon}>{q.icon}</Text>
+          <Text style={styles.chipText}>{q.text}</Text>
         </TouchableOpacity>
       ))}
     </ScrollView>
@@ -36,25 +38,30 @@ export default function QuickActions({ onSelect, visible }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    maxHeight: 56,
+    maxHeight: 60,
     marginBottom: 8,
   },
   content: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     gap: 8,
     alignItems: "center",
   },
   chip: {
-    backgroundColor: "#F0FDFA",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: COLORS.glass,
     borderWidth: 1,
-    borderColor: "#14B8A6",
+    borderColor: COLORS.tealBorder,
     borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 9,
   },
+  chipIcon: { fontSize: 14 },
   chipText: {
-    color: "#0F766E",
+    color: COLORS.teal,
     fontSize: 13,
     fontWeight: "500",
+    maxWidth: 200,
   },
 });

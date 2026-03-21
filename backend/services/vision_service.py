@@ -17,7 +17,7 @@ def _get_client():
 
 def identify_sign(image_b64: str) -> dict | None:
     resp = _get_client().chat.completions.create(
-        model="google/gemini-2.5-flash-preview",
+        model="google/gemini-2.5-flash",
         max_tokens=200,
         messages=[{"role": "user", "content": [
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},

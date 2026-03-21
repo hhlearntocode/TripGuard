@@ -25,6 +25,7 @@ async def chat(req: ChatRequest):
     )
     return {
         "answer": result["answer"],
+        "sources": result["sources"],
         "debug": {"steps": result["steps"], "tools_used": result["tools_used"]},
     }
 

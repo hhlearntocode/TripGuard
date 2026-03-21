@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { COLORS } from "@/constants/theme";
 
 type Status = "legal" | "restricted" | "illegal";
 
@@ -8,17 +9,17 @@ interface Props {
 }
 
 const STATUS_CONFIG = {
-  legal:      { emoji: "✅", label: "Legal",      color: "#D1FAE5", textColor: "#065F46" },
-  restricted: { emoji: "⚠️", label: "Restricted", color: "#FEF3C7", textColor: "#92400E" },
-  illegal:    { emoji: "❌", label: "Illegal",    color: "#FEE2E2", textColor: "#991B1B" },
+  legal:      { emoji: "✅", label: "Legal",      bg: COLORS.okGlass,    border: COLORS.okBorder,    text: COLORS.ok },
+  restricted: { emoji: "⚠️", label: "Restricted", bg: COLORS.warnGlass,  border: COLORS.warnBorder,  text: COLORS.warn },
+  illegal:    { emoji: "❌", label: "Illegal",    bg: COLORS.errorGlass, border: COLORS.errorBorder, text: COLORS.error },
 };
 
 export default function StatusBadge({ status }: Props) {
-  const config = STATUS_CONFIG[status];
+  const c = STATUS_CONFIG[status];
   return (
-    <View style={[styles.badge, { backgroundColor: config.color }]}>
-      <Text style={styles.emoji}>{config.emoji}</Text>
-      <Text style={[styles.label, { color: config.textColor }]}>{config.label}</Text>
+    <View style={[styles.badge, { backgroundColor: c.bg, borderColor: c.border }]}>
+      <Text style={styles.emoji}>{c.emoji}</Text>
+      <Text style={[styles.label, { color: c.text }]}>{c.label}</Text>
     </View>
   );
 }
@@ -28,11 +29,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 12,
-    gap: 4,
+    borderWidth: 1,
+    gap: 5,
     alignSelf: "flex-start",
   },
-  emoji: { fontSize: 14 },
-  label: { fontSize: 13, fontWeight: "600" },
+  emoji: { fontSize: 13 },
+  label: { fontSize: 12, fontWeight: "700" },
 });

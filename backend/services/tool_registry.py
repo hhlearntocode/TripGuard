@@ -80,7 +80,13 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string",
-                              "description": "Add 'Vietnam 2025' and law domain for best results"},
+                              "description": (
+                                  "Write the query in VIETNAMESE for official government results. "
+                                  "Use site: operator for trusted sources. Examples: "
+                                  "'quy định nhập khẩu thuốc lá điện tử Việt Nam site:thuvienphapluat.vn', "
+                                  "'xử phạt vi phạm giao thông 2024 site:thuvienphapluat.vn', "
+                                  "'quy định drone flycam Việt Nam 2025 site:vbpl.vn'"
+                              )},
                     "max_results": {"type": "integer", "default": 5}
                 },
                 "required": ["query"]
@@ -115,7 +121,7 @@ def execute_tool(name: str, args: dict) -> str:
         chunks = retrieve(
             query=args["query"],
             category=args.get("category"),
-            n=args.get("n_results", 3),
+            n=int(args.get("n_results", 3)),
         )
         return "\n\n---\n\n".join(chunks) if chunks else "No relevant provisions found in corpus."
 

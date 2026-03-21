@@ -161,20 +161,43 @@ async def run_agent(
 ---
 ## UI Reference
 
-Before coding any screen, read the corresponding image in `docs/ui/`.
-Images are the source of truth for layout, spacing, and color — do not invent UI.
+### Stack
+React Native (Expo) — all UI must target React Native components, not HTML/web.
 
-| Screen | File |
-|--------|------|
-| Chat | `docs/ui/chatbox_layout.jpg` |
-| Layout | `docs/ui/layout.png` |
-| UI | `docs/ui/io.jpeg` |
-For other screens not listed, extrapolate from the reference images above to maintain visual consistency.
+### UI UX Pro Max Skill
+The `ui-ux-pro-max` skill is installed and active. It auto-generates a design system (style, colors, typography, effects) when UI work is requested.
 
-When implementing a screen:
-1. Read the corresponding reference image
-2. In the plan, list the components to be created based on the image
-3. Match spacing, color, and layout as closely as possible
+**How to use it with TripGuard:**
+1. Before generating any design system, run the search script to find the best match:
+   ```bash
+   python3 .claude/skills/ui-ux-pro-max/scripts/search.py "legal advisory travel safety mobile app" --design-system -p "TripGuard"
+   ```
+2. Persist the result as the project master design system:
+   ```bash
+   python3 .claude/skills/ui-ux-pro-max/scripts/search.py "legal advisory travel safety mobile app" --design-system --persist -p "TripGuard"
+   ```
+   This creates `design-system/MASTER.md` — the single source of truth for all UI decisions.
+3. For each screen, check if a page override exists in `design-system/pages/`. If not, use `MASTER.md`.
+
+**Override rule — reference images take priority over generated design system:**
+The images in `docs/ui/` are the final authority on layout, spacing, and visual structure. And a prior styles I want to use is **Liquid Glass + Glassmorphism**
+If the generated design system conflicts with a reference image, **the image wins**.
+
+### Reference Images
+
+| Screen | File | Authority |
+|--------|------|-----------|
+| Chat | `docs/ui/chatbox_layout.jpg` | Layout + component structure |
+| Layout | `docs/ui/layout.png` | Overall app shell + navigation |
+| UI | `docs/ui/io.jpeg` | Visual style + color tone |
+
+For screens not covered by a reference image: extrapolate from the images above to maintain consistency, then apply the generated design system for details (colors, typography, spacing values).
+
+### When implementing a screen
+1. Read the reference image if one exists
+2. Run the design system search if `design-system/MASTER.md` doesn't exist yet
+3. In the plan, list: components to create, which reference image applies, which design system rules apply
+4. Match the reference image for structure; use `MASTER.md` for design tokens (colors, fonts, spacing)
 
 ## Tool Registry
 
@@ -898,4 +921,5 @@ Ready to proceed? (y/n)
 - Search→Scrape is fallback only — agent decides when `retrieve_law()` has insufficient confidence
 - Emergency mode must work **offline** — `get_emergency_steps()` calls no external APIs
 - TinyFish `/run` (sync) timeout is 25s — on timeout, skip the URL, do not retry
+- UI UX Pro Max skill is active — run `design-system/MASTER.md` generation once before building any UI (see UI Reference section). Reference images in `docs/ui/` override the generated design system for layout decisions.
 - `.gitignore`: `backend/chroma_db/`, `rag/`, `venv*/`, `.env`
