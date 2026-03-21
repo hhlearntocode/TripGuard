@@ -20,7 +20,6 @@ import { BlurView } from "expo-blur";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import Markdown from "react-native-markdown-display";
-import Markdown from "react-native-markdown-display";
 import { useLocalSearchParams } from "expo-router";
 import { loadUserProfile, UserProfile } from "@/hooks/useUserProfile";
 import { useVoiceChatRecorder } from "@/hooks/useVoiceChatRecorder";
